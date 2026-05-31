@@ -154,11 +154,13 @@ function addParty(id) {
   if (playerData.party.length >= 3) playerData.party.shift();
   playerData.party.push(id);
   renderParty();
+  autoSave('party-add');
 }
 
 function removeParty(i) {
   playerData.party.splice(i, 1);
   renderParty();
+  autoSave('party-remove');
 }
 
 // ────────────────────────────────────────────────
@@ -184,6 +186,7 @@ function rollGacha(count) {
     results.push({ ch, isNew });
   }
   showGachaResult(results);
+  autoSave('gacha');
 }
 
 function showGachaResult(results) {
@@ -367,6 +370,54 @@ window.saveToCloud = async function() {
     showToast('保存に失敗しました: ' + e.message, true);
   }
 };
+
+// ── Auto-save ───────────────────────────────────────────────────────────
+let _autoSaveTimer = null;
+
+async function autoSave(reason) {
+  const user = window._currentUser;
+  if (!user || typeof window._saveData !== 'function') return;
+  try {
+    await window._saveData(user.uid, serializePlayerData());
+    console.log('[AutoSave]', reason);
+    const btn = document.getElementById('save-btn');
+    if (btn) {
+      btn.classList.add('saved');
+      btn.textContent = '\u2713 AUTO';
+      clearTimeout(btn._autoTid);
+      btn._autoTid = setTimeout(() => {
+        btn.classList.remove('saved');
+        btn.textContent = 'SAVE';
+      }, 1500);
+    }
+  } catch(e) {
+    showToast('\u81ea\u52d5\u4fdd\u5b58\u306b\u5931\u6557: ' + e.message, true);
+  }
+}
+
+function startAutoSaveInterval() {
+  clearInterval(_autoSaveTimer);
+  _autoSaveTimer = setInterval(() => autoSave('interval-30s'), 30000);
+}
+function stopAutoSaveInterval() {
+  clearInterval(_autoSaveTimer);
+}
+
+const _origOnAuthChanged = window.onAuthChanged;
+window.onAuthChanged = function(user) {
+  if (_origOnAuthChanged) _origOnAuthChanged(user);
+  if (user) startAutoSaveInterval();
+  else      stopAutoSaveInterval();
+};
+
+window.addEventListener('beforeunload', () => {
+  if (!window._currentUser || typeof window._saveData !== 'function') return;
+  try { window._saveData(window._currentUser.uid, serializePlayerData()); } catch(_) {}
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') autoSave('tab-hidden');
+});
+
 
 // ── Load from Firestore ──────────────────────────────────────
 async function loadFromCloud(uid) {
