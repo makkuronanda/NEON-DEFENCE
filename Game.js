@@ -766,6 +766,7 @@ function gameLoop() {
     } else if (gameState.state === 'playing') {
       gameState.state = 'clear';
       playerData.crystals += 300;
+      if (typeof autoSave === 'function') autoSave('mission-clear');
       showModal("MISSION COMPLETE", "セクターコアの完全防衛に成功。報酬: 300コア結晶", "var(--green)");
       updateMeta();
     }
