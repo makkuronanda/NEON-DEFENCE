@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>NEON DEFENSE: OVERDRIVE III</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<!-- Firebase SDKs -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+    from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+  import { getFirestore, doc, setDoc, getDoc }
+    from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  // ── Firebase Config ─────────────────────────────────────
+  // ★ ここに自分のFirebaseプロジェクトの設定を貼り付けてください ★
+  const firebaseConfig = {
+    apiKey:            "AIzaSyAjSgRjBOO3XYay1YV1C7_velTf67w6ZG0",
+    authDomain:        "towergame-c0725.firebaseapp.com",
+    projectId:         "towergame-c0725",
+    storageBucket:     "towergame-c0725.firebasestorage.app",
+    messagingSenderId: "516611786920",
+    appId:             "1:516611786920:web:25c505728d1260b2e29a9d"
+  };
+
+  const app  = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db   = getFirestore(app);
+  const gProvider = new GoogleAuthProvider();
+
+  // ── Expose to global scope ───────────────────────────────
+  window._firebaseAuth = auth;
+  window._firebaseDb   = db;
+  window._googleLogin  = async () => {
+    try {
+      await signInWithPopup(auth, gProvider);
+    } catch(e) { console.error(e); alert("ログインに失敗しました: " + e.message); }
+  };
+  window._googleLogout = async () => {
+    await signOut(auth);
+  };
+  window._saveData = async (uid, data) => {
+    await setDoc(doc(db, "players", uid), data);
+  };
+  window._loadData = async (uid) => {
+    const snap = await getDoc(doc(db, "players", uid));
+    return snap.exists() ? snap.data() : null;
+  };
+
+  // ── Auth state listener ──────────────────────────────────
+  onAuthStateChanged(auth, user => {
+    window._currentUser = user || null;
+    if (typeof window.onAuthChanged === 'function') window.onAuthChanged(user);
+  });
+</script>
+</head>
+<body>
+
+<!-- ============================================================
+     LOADING SCREEN
+     ============================================================ -->
+<div id="loader-screen">
+  <div class="loader-bg-grid"></div>
+  <div class="loader-scanline"></div>
+  <div class="loader-particles" id="loader-particles"></div>
+
+  <div class="loader-core-wrap">
+    <div class="loader-rings">
+      <div class="loader-ring r1"></div>
+      <div class="loader-ring r2"></div>
+      <div class="loader-ring r3"></div>
+      <div class="loader-ring r4"></div>
+    </div>
+    <div class="loader-core-inner">
+      <div class="loader-core-glyph">⬡</div>
+    </div>
+  </div>
+
+  <div class="loader-text-block">
+    <div class="loader-system-tag">NEON DEFENSE SYSTEM</div>
+    <div class="loader-title-wrap">
+      <span class="loader-title-char" style="--i:0">O</span>
+      <span class="loader-title-char" style="--i:1">V</span>
+      <span class="loader-title-char" style="--i:2">E</span>
+      <span class="loader-title-char" style="--i:3">R</span>
+      <span class="loader-title-char" style="--i:4">D</span>
+      <span class="loader-title-char" style="--i:5">R</span>
+      <span class="loader-title-char" style="--i:6">I</span>
+      <span class="loader-title-char" style="--i:7">V</span>
+      <span class="loader-title-char" style="--i:8">E</span>
+    </div>
+    <div class="loader-roman">III</div>
+  </div>
+
+  <div class="loader-progress-wrap">
+    <div class="loader-progress-label" id="loader-label">INITIALIZING CORE SYSTEMS...</div>
+    <div class="loader-bar-outer">
+      <div class="loader-bar-fill" id="loader-bar"></div>
+      <div class="loader-bar-pulse"></div>
+    </div>
+    <div class="loader-percent" id="loader-percent">0%</div>
+  </div>
+
+  <div class="loader-log" id="loader-log"></div>
+  <div class="loader-corner tl"></div>
+  <div class="loader-corner tr"></div>
+  <div class="loader-corner bl"></div>
+  <div class="loader-corner br"></div>
+</div>
+
+<!-- ============================================================
+     MAIN APP (hidden until load complete)
+     ============================================================ -->
+<div id="app" style="display:none;flex:1;flex-direction:column;height:100%">
+
+<header>
+  <div class="header-tabs" id="main-tabs">
+    <button class="tab-btn active" onclick="switchScreen('title')">TOP</button>
+    <button class="tab-btn" onclick="switchScreen('stage')">STAGE</button>
+    <button class="tab-btn" onclick="switchScreen('party')">PARTY</button>
+    <button class="tab-btn" onclick="switchScreen('gacha')">GACHA</button>
+  </div>
+  <div class="header-crystal">CORE CRYSTA <span id="meta-currency">0</span></div>
+  <div class="header-auth" id="header-auth">
+    <button class="auth-btn" id="auth-btn" onclick="handleAuthBtn()">
+      <span id="auth-btn-icon">⬡</span>
+      <span id="auth-btn-label">GOOGLE LOGIN</span>
+    </button>
+    <div class="auth-save-wrap" id="auth-save-wrap" style="display:none">
+      <button class="save-btn" id="save-btn" onclick="saveToCloud()">SAVE</button>
+      <div class="auth-user-name" id="auth-user-name"></div>
+    </div>
+  </div>
+</header>
+
+<!-- TITLE -->
+<div id="screen-title" class="screen active">
+  <div class="title-bg-grid"></div>
+  <div class="title-scanbeam"></div>
+  <div class="title-hexagons" id="title-hexagons"></div>
+  <div class="title-main">
+    <div class="title-eyebrow">◈ CLASSIFIED MILITARY SYSTEM ◈</div>
+    <div class="title-logo">NEON DEFENSE</div>
+    <div class="title-sub">— OVERDRIVE SYSTEM III —</div>
+    <div class="title-stats">
+      <div class="title-stat"><div class="title-stat-num" id="ts-chars">8</div><div class="title-stat-lbl">UNITS</div></div>
+      <div class="title-stat"><div class="title-stat-num">3</div><div class="title-stat-lbl">SECTORS</div></div>
+      <div class="title-stat"><div class="title-stat-num">5</div><div class="title-stat-lbl">WAVES</div></div>
+    </div>
+    <button class="btn-start btn-start-pulse" onclick="switchScreen('stage')">▶ BOOT SYSTEM</button>
+  </div>
+  <div class="title-version">VER. 3.0.0 / BUILD 2025</div>
+</div>
+
+<!-- STAGE -->
+<div id="screen-stage" class="screen">
+  <div class="screen-content">
+    <div class="screen-title">◈ SELECT OPERATIONAL AREA</div>
+    <div class="stage-grid" id="stage-list"></div>
+  </div>
+</div>
+
+<!-- PARTY -->
+<div id="screen-party" class="screen">
+  <div class="screen-content">
+    <div class="screen-title">◈ BATTLE TEAM CONFIGURATION</div>
+    <div class="party-layout">
+      <div>
+        <div style="font-size:0.65rem;letter-spacing:2px;color:#446;margin-bottom:10px;">ACTIVE SLOTS (MAX 3)</div>
+        <div class="party-slots-row" id="party-slots"></div>
+      </div>
+      <div class="divider"></div>
+      <div style="font-size:0.65rem;letter-spacing:2px;color:#446;margin-bottom:12px;">UNIT ARCHIVE</div>
+      <div class="char-grid" id="inventory-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- GACHA -->
+<div id="screen-gacha" class="screen">
+  <div class="gacha-scene">
+    <div class="gacha-title">CORE RECRUIT</div>
+    <div class="gacha-subtitle">◈ SIGNAL DECRYPTION SYSTEM ◈</div>
+    <div class="gacha-portal" onclick="rollGacha(1)">
+      <div class="gacha-ring"></div>
+      <div class="gacha-ring"></div>
+      <div class="gacha-ring"></div>
+      <div class="gacha-core" id="gacha-core-btn">DECRYPT</div>
+    </div>
+    <div class="gacha-cost">1回 = 100 CRYSTA　/　10連 = 900 CRYSTA (1回分お得)</div>
+    <div class="gacha-btns">
+      <button class="btn-gacha" onclick="rollGacha(1)">1回 HACK (100C)</button>
+      <button class="btn-gacha ten" onclick="rollGacha(10)">10連 HACK (900C)</button>
+    </div>
+    <div style="font-size:0.65rem;color:#334;text-align:center;line-height:1.6;">
+      未解放ユニットの復元、または所持ユニットの限界突破(ATK +10%)
+    </div>
+  </div>
+</div>
+
+<!-- GACHA RESULT OVERLAY -->
+<div id="gacha-overlay">
+  <div class="gacha-flash" id="gacha-flash"></div>
+  <div class="gacha-result-bg" id="gacha-result-bg"></div>
+  <div class="gacha-stars" id="gacha-stars"></div>
+  <div id="gacha-multi-results" style="display:flex;flex-wrap:wrap;gap:16px;justify-content:center;align-items:center;max-width:900px;position:relative;z-index:1;"></div>
+  <button class="btn-gacha-close" onclick="closeGachaOverlay()">▶ CONTINUE</button>
+</div>
+
+<!-- GAME -->
+<div id="screen-game" class="screen">
+  <div class="game-hud">
+    <div class="hud-stat"><div class="hud-label">INTEGRITY</div><div class="hud-val" id="g-hp" style="color:var(--red)">20</div></div>
+    <div class="hud-stat"><div class="hud-label">CREDITS</div><div class="hud-val" id="g-money" style="color:var(--green)">0</div></div>
+    <div class="hud-stat"><div class="hud-label">WAVE</div><div class="hud-val" id="g-wave" style="color:var(--orange)">1/5</div></div>
+    <div style="font-size:0.65rem;letter-spacing:2px;color:var(--cyan)" id="g-gimmick">GIMMICK: —</div>
+  </div>
+  <div class="game-canvas-wrap">
+    <canvas id="gameCanvas" width="800" height="500"></canvas>
+    <div id="game-modal" class="game-overlay">
+      <div id="modal-title" style="font-family:var(--font-main);font-size:2rem;font-weight:900;letter-spacing:4px;"></div>
+      <div id="modal-desc" style="text-align:center;max-width:500px;color:#aab;font-size:0.85rem;line-height:1.6;"></div>
+      <button class="btn-general" id="modal-close-btn">RETURN TO MAP</button>
+    </div>
+  </div>
+  <div class="game-controls-bar">
+    <div class="build-scroll" id="build-options"></div>
+    <div class="inspect-bar" id="inspect-panel"><span style="color:#556;font-size:0.65rem;letter-spacing:1px;">タップしてタワー配置 / タワーをタップで選択</span></div>
+  </div>
+</div>
+
+</div><!-- /#app -->
+
+<script src="data.js"></script>
+<script src="loader.js"></script>
+<script src="ui.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
