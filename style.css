@@ -288,18 +288,19 @@ body::after {
 header {
   position: relative; z-index: 100;
   background: var(--panel);
-  padding: 0 20px; height: 52px;
+  padding: 0 8px; height: 44px;
   display: flex; justify-content: space-between; align-items: center;
   border-bottom: 1px solid rgba(0,245,255,0.25);
   box-shadow: 0 0 30px rgba(0,245,255,0.08), inset 0 -1px 0 rgba(0,245,255,0.15);
+  gap: 4px;
 }
-.header-tabs { display: flex; gap: 0; }
+.header-tabs { display: flex; gap: 0; flex-shrink: 0; }
 .tab-btn {
   font-family: var(--font-main);
-  font-size: 0.7rem; letter-spacing: 2px; font-weight: 700;
+  font-size: 0.58rem; letter-spacing: 1px; font-weight: 700;
   background: transparent; color: #334;
   border: none; border-right: 1px solid #0a0e1a;
-  padding: 0 18px; height: 52px;
+  padding: 0 10px; height: 44px;
   cursor: pointer; transition: all 0.2s;
   position: relative; overflow: hidden;
 }
@@ -313,12 +314,14 @@ header {
 .tab-btn.active::before { transform: scaleX(1); }
 .header-crystal {
   font-family: var(--font-main);
-  font-size: 0.75rem; letter-spacing: 2px;
-  color: var(--cyan); display: flex; align-items: center; gap: 8px;
+  font-size: 0.62rem; letter-spacing: 1px;
+  color: var(--cyan); display: flex; align-items: center; gap: 4px;
+  white-space: nowrap; flex-shrink: 0;
+  min-width: 0;
 }
 .header-crystal span {
   color: var(--gold);
-  text-shadow: 0 0 8px var(--gold); font-size: 0.9rem;
+  text-shadow: 0 0 8px var(--gold); font-size: 0.82rem;
 }
 
 /* ============================================================
@@ -571,48 +574,84 @@ header {
 /* ============================================================
    GAME SCREEN
    ============================================================ */
-#screen-game { padding: 0; flex-direction: column; align-items: center; justify-content: center; }
+#screen-game { padding: 0; flex-direction: column; align-items: center; justify-content: flex-start; }
 .game-hud {
   width: 800px; max-width: 100%;
   background: var(--panel); border-bottom: 1px solid #1a2040;
-  padding: 8px 16px;
+  padding: 5px 12px;
   display: flex; justify-content: space-between; align-items: center;
-  font-size: 0.72rem; letter-spacing: 1px;
+  font-size: 0.65rem; letter-spacing: 1px;
+  flex-shrink: 0;
 }
 .hud-stat { display: flex; flex-direction: column; align-items: center; gap: 1px; }
-.hud-label { font-size: 0.55rem; letter-spacing: 2px; color: #446; }
-.hud-val { font-family: var(--font-main); font-size: 0.95rem; font-weight: 700; }
-.game-canvas-wrap { position: relative; width: 800px; height: 500px; max-width: 100%; }
-canvas { display: block; width: 100%; height: 100%; }
+.hud-label { font-size: 0.5rem; letter-spacing: 2px; color: #446; }
+.hud-val { font-family: var(--font-main); font-size: 0.85rem; font-weight: 700; }
+.game-canvas-wrap {
+  position: relative;
+  width: 800px; max-width: 100%;
+  flex: 1;
+  min-height: 0;
+}
+canvas { display: block; width: 100%; height: 100%; object-fit: contain; }
 .game-overlay {
   position: absolute; inset: 0; background: rgba(2,2,16,0.93);
   display: none; flex-direction: column; align-items: center; justify-content: center; gap: 20px; z-index: 50;
 }
 .game-controls-bar {
   width: 800px; max-width: 100%; background: var(--panel); border-top: 1px solid #1a2040;
-  padding: 8px 12px; display: flex; gap: 10px; align-items: center;
+  padding: 6px 10px; display: flex; gap: 8px; align-items: stretch;
+  flex-shrink: 0; min-height: 52px; max-height: 70px;
 }
-.build-scroll { display: flex; gap: 8px; overflow-x: auto; flex-shrink: 0; }
+.build-scroll { display: flex; gap: 6px; overflow-x: auto; flex-shrink: 0; align-items: center; }
 .tower-btn {
   background: rgba(6,8,22,0.9); border: 1px solid #1a2040;
-  padding: 6px 10px; cursor: pointer; transition: all 0.2s;
+  padding: 4px 8px; cursor: pointer; transition: all 0.2s;
   display: flex; flex-direction: column; align-items: center; gap: 2px;
-  min-width: 90px; font-family: var(--font-mono); font-size: 0.65rem;
+  min-width: 76px; font-family: var(--font-mono); font-size: 0.6rem;
+  flex-shrink: 0;
 }
 .tower-btn.active { box-shadow: 0 0 10px rgba(0,245,255,0.2); background: rgba(0,245,255,0.05); }
 .tower-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-.tower-btn-name { font-family: var(--font-main); font-size: 0.65rem; font-weight: 700; letter-spacing: 1px; }
+.tower-btn-name { font-family: var(--font-main); font-size: 0.6rem; font-weight: 700; letter-spacing: 1px; }
 .inspect-bar {
   flex: 1; background: rgba(0,0,0,0.4); border-left: 3px solid var(--pink);
-  padding: 5px 12px; font-size: 0.7rem;
-  display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 46px;
+  padding: 4px 10px; font-size: 0.65rem;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 6px; min-height: 40px; overflow: hidden;
 }
 .btn-evolve {
-  font-family: var(--font-main); font-size: 0.65rem; letter-spacing: 2px;
+  font-family: var(--font-main); font-size: 0.6rem; letter-spacing: 1px;
   background: var(--pink); color: #000; border: none;
-  padding: 6px 14px; cursor: pointer; font-weight: 700; white-space: nowrap;
+  padding: 5px 10px; cursor: pointer; font-weight: 700; white-space: nowrap;
+  flex-shrink: 0;
 }
 .btn-evolve:disabled { background: #1a2040; color: #334; cursor: not-allowed; }
+
+/* Mobile portrait: compress game screen further */
+@media (max-width: 600px) and (orientation: portrait) {
+  .game-hud {
+    padding: 4px 8px;
+    font-size: 0.6rem;
+  }
+  .hud-val { font-size: 0.75rem; }
+  #g-gimmick { font-size: 0.52rem !important; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .game-controls-bar {
+    flex-direction: column;
+    max-height: none;
+    padding: 5px 8px;
+    gap: 5px;
+  }
+  .build-scroll { width: 100%; }
+  .inspect-bar {
+    width: 100%;
+    border-left: none;
+    border-top: 3px solid var(--pink);
+    min-height: 34px;
+    padding: 4px 8px;
+  }
+  .tower-btn { min-width: 68px; padding: 4px 6px; }
+  .tower-btn-name { font-size: 0.56rem; }
+}
 
 /* ============================================================
    AUTH / SAVE UI
@@ -622,30 +661,31 @@ header {
   align-items: center;
   justify-content: space-between;
   flex-wrap: nowrap;
-  gap: 6px;
+  gap: 4px;
 }
 
 .header-auth {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
 }
 
 .auth-btn {
   font-family: var(--font-main);
-  font-size: 0.55rem;
-  letter-spacing: 1px;
+  font-size: 0.5rem;
+  letter-spacing: 0.5px;
   background: transparent;
   border: 1px solid var(--cyan);
   color: var(--cyan);
-  padding: 4px 10px;
+  padding: 3px 7px;
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 3px;
   transition: all 0.2s;
   white-space: nowrap;
+  height: 26px;
 }
 .auth-btn:hover {
   background: rgba(0,245,255,0.1);
@@ -668,15 +708,16 @@ header {
 
 .save-btn {
   font-family: var(--font-main);
-  font-size: 0.55rem;
-  letter-spacing: 1px;
+  font-size: 0.5rem;
+  letter-spacing: 0.5px;
   background: transparent;
   border: 1px solid var(--green);
   color: var(--green);
-  padding: 4px 10px;
+  padding: 3px 7px;
   cursor: pointer;
   transition: all 0.2s;
   white-space: nowrap;
+  height: 26px;
 }
 .save-btn:hover {
   background: rgba(0,255,136,0.12);
@@ -693,15 +734,29 @@ header {
 
 .auth-user-name {
   font-family: var(--font-mono);
-  font-size: 0.55rem;
+  font-size: 0.48rem;
   color: #556;
-  max-width: 90px;
+  max-width: 60px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Notification toast */
+/* ============================================================
+   MOBILE RESPONSIVE — header & general
+   ============================================================ */
+@media (max-width: 480px) {
+  header { padding: 0 6px; height: 40px; gap: 2px; }
+  .tab-btn { padding: 0 7px; height: 40px; font-size: 0.52rem; letter-spacing: 0; }
+  .header-crystal { font-size: 0.56rem; gap: 2px; }
+  .header-crystal span { font-size: 0.75rem; }
+  .crysta-label { display: none; }
+  .auth-btn { padding: 2px 5px; font-size: 0.48rem; height: 24px; }
+  #auth-btn-label { display: none; }
+  .save-btn { padding: 2px 5px; height: 24px; font-size: 0.48rem; }
+  .auth-user-name { display: none; }
+  .auth-save-wrap { gap: 4px; }
+}
 #save-toast {
   position: fixed;
   bottom: 80px;
