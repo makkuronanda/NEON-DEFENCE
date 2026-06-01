@@ -835,62 +835,7 @@ header {
     flex-shrink: 0;
   }
 
-  /* ── Game screen ──────────────────────────────────────── */
-  #screen-game {
-    justify-content: flex-start;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  /* HUD: 2行に折り返し可 */
-  .game-hud {
-    width: 100%;
-    flex-wrap: wrap;
-    gap: 4px;
-    padding: 6px 10px;
-  }
-  .hud-stat { min-width: 56px; }
-  .hud-val  { font-size: 0.8rem; }
-  #g-gimmick { font-size: 0.55rem; width: 100%; text-align: center; }
-
-  /* Canvas: PCレイアウト(800×500)はそのまま、横スクロールで対応 */
-  .game-canvas-wrap {
-    width: 100%;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    /* 高さは内部canvasに合わせる — 縦引き伸ばしを防ぐ */
-    height: auto;
-    flex-shrink: 0;
-  }
-  /* canvas自体のサイズは変えない（PCそのまま）。
-     幅100%で縮小させず、横スクロールに委ねる */
-  .game-canvas-wrap canvas {
-    width: 800px !important;
-    height: 500px !important;
-    display: block;
-  }
-
-  /* コントロールバー */
-  .game-controls-bar {
-    width: 100%;
-    flex-direction: column;
-    gap: 6px;
-    padding: 8px 10px;
-  }
-  .build-scroll {
-    width: 100%;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-  .tower-btn {
-    min-width: 80px;
-    padding: 5px 8px;
-  }
-  .inspect-bar {
-    width: 100%;
-    font-size: 0.65rem;
-    min-height: 40px;
-  }
+  /* ── Game screen ── 下の @media ブロックで定義 ──────────── */
 
   /* ── Screen content ───────────────────────────────────── */
   .screen-content {
@@ -911,17 +856,100 @@ header {
   }
 }
 
-/* html/bodyのoverflow:hiddenをモバイルで解除（ゲーム画面スクロール対応） */
+/* ── モバイル: アプリ全体の高さ制約を外してスクロール可能にする ── */
 @media (max-width: 600px) {
+  /* body/html を自然な高さに */
   html, body {
-    overflow: auto;
+    height: auto;
+    min-height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
     -webkit-overflow-scrolling: touch;
   }
-  /* ゲーム画面以外はoverflowを維持 */
-  #screen-title,
-  #screen-stage,
-  #screen-party,
-  #screen-gacha {
-    overflow: hidden;
+
+  /* #app も height:100% を外す */
+  #app {
+    height: auto;
+    min-height: 100vh;
+  }
+
+  /* screen は flex:1 で高さが縛られないよう height:auto に */
+  .screen {
+    flex: none;
+    overflow: visible;
+  }
+  .screen.active {
+    min-height: calc(100vh - 52px); /* ヘッダー分を引いた最低高さ */
+  }
+
+  /* ゲーム画面: 縦に積んで全部見えるように */
+  #screen-game {
+    display: flex !important;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    overflow: visible;
+    height: auto;
+    min-height: auto;
+    padding-bottom: 20px;
+  }
+
+  /* HUD: 幅いっぱい */
+  .game-hud {
+    width: 100%;
+    box-sizing: border-box;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 6px 10px;
+  }
+
+  /* HUD */
+  .hud-stat { min-width: 56px; }
+  .hud-val  { font-size: 0.8rem; }
+  #g-gimmick { font-size: 0.55rem; width: 100%; text-align: center; }
+
+  /* タワーボタン */
+  .tower-btn {
+    min-width: 80px;
+    padding: 5px 8px;
+  }
+
+  /* Canvas wrapper: 横スクロールエリア、高さはcanvasに追従 */
+  .game-canvas-wrap {
+    width: 100%;
+    height: auto;
+    overflow-x: auto;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
+    flex-shrink: 0;
+  }
+
+  /* Canvas: 800×500固定のままスマホは横スクロール */
+  .game-canvas-wrap canvas {
+    width: 800px !important;
+    height: 500px !important;
+    display: block;
+    flex-shrink: 0;
+  }
+
+  /* コントロールバー: 幅いっぱい・縦積み */
+  .game-controls-bar {
+    width: 100%;
+    box-sizing: border-box;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 10px;
+  }
+
+  .build-scroll {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .inspect-bar {
+    width: 100%;
+    font-size: 0.65rem;
+    min-height: 40px;
   }
 }
