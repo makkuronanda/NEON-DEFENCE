@@ -228,7 +228,7 @@ function showGachaResult(results) {
       border:1px solid ${rc};
       box-shadow:0 0 ${ch.rarity==='SSR'?40:20}px ${rc}${ch.rarity==='SSR'?'88':'44'};
       animation-delay:${idx * 0.08}s;
-      ${results.length > 1 ? 'width:200px;padding:30px 20px;' : ''}
+      ${results.length > 1 ? 'width:clamp(130px,22vw,200px);padding:30px 20px;' : ''}
     `;
     card.innerHTML = `
       <div class="gacha-result-rarity" style="color:${rc};text-shadow:0 0 10px ${rc};">
