@@ -583,7 +583,7 @@ header {
 .hud-label { font-size: 0.55rem; letter-spacing: 2px; color: #446; }
 .hud-val { font-family: var(--font-main); font-size: 0.95rem; font-weight: 700; }
 .game-canvas-wrap { position: relative; width: 800px; height: 500px; max-width: 100%; }
-#gameCanvas { display: block; width: 100%; height: 100%; }
+canvas { display: block; width: 100%; height: 100%; }
 .game-overlay {
   position: absolute; inset: 0; background: rgba(2,2,16,0.93);
   display: none; flex-direction: column; align-items: center; justify-content: center; gap: 20px; z-index: 50;
@@ -727,6 +727,7 @@ header {
   border-color: var(--red);
   color: var(--red);
 }
+
 /* ============================================================
    MOBILE RESPONSIVE — スマホ向け修正
    ============================================================ */
@@ -835,7 +836,58 @@ header {
     flex-shrink: 0;
   }
 
-  /* ── Game screen ── 下の @media ブロックで定義 ──────────── */
+  /* ── Game screen ──────────────────────────────────────── */
+  #screen-game {
+    justify-content: flex-start;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* HUD: 2行に折り返し可 */
+  .game-hud {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 6px 10px;
+  }
+  .hud-stat { min-width: 56px; }
+  .hud-val  { font-size: 0.8rem; }
+  #g-gimmick { font-size: 0.55rem; width: 100%; text-align: center; }
+
+  /* Canvas: 画面幅に合わせて縦横比を維持して縮小表示する */
+  .game-canvas-wrap {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 8 / 5; /* PCレイアウトの800x500の比率を維持 */
+    flex-shrink: 0;
+  }
+  .game-canvas-wrap canvas {
+    width: 100% !important;
+    height: 100% !important;
+    display: block;
+  }
+
+  /* コントロールバー */
+  .game-controls-bar {
+    width: 100%;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 10px;
+  }
+  .build-scroll {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .tower-btn {
+    min-width: 80px;
+    padding: 5px 8px;
+  }
+  .inspect-bar {
+    width: 100%;
+    font-size: 0.65rem;
+    min-height: 40px;
+  }
 
   /* ── Screen content ───────────────────────────────────── */
   .screen-content {
@@ -856,100 +908,17 @@ header {
   }
 }
 
-/* ── モバイル: アプリ全体の高さ制約を外してスクロール可能にする ── */
+/* html/bodyのoverflow:hiddenをモバイルで解除（ゲーム画面スクロール対応） */
 @media (max-width: 600px) {
-  /* body/html を自然な高さに */
   html, body {
-    height: auto;
-    min-height: 100%;
-    overflow-x: hidden;
-    overflow-y: auto;
+    overflow: auto;
     -webkit-overflow-scrolling: touch;
   }
-
-  /* #app も height:100% を外す */
-  #app {
-    height: auto;
-    min-height: 100vh;
-  }
-
-  /* screen は flex:1 で高さが縛られないよう height:auto に */
-  .screen {
-    flex: none;
-    overflow: visible;
-  }
-  .screen.active {
-    min-height: calc(100vh - 52px); /* ヘッダー分を引いた最低高さ */
-  }
-
-  /* ゲーム画面: 縦に積んで全部見えるように */
-  #screen-game {
-    display: flex !important;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-start;
-    overflow: visible;
-    height: auto;
-    min-height: auto;
-    padding-bottom: 20px;
-  }
-
-  /* HUD: 幅いっぱい */
-  .game-hud {
-    width: 100%;
-    box-sizing: border-box;
-    flex-wrap: wrap;
-    gap: 4px;
-    padding: 6px 10px;
-  }
-
-  /* HUD */
-  .hud-stat { min-width: 56px; }
-  .hud-val  { font-size: 0.8rem; }
-  #g-gimmick { font-size: 0.55rem; width: 100%; text-align: center; }
-
-  /* タワーボタン */
-  .tower-btn {
-    min-width: 80px;
-    padding: 5px 8px;
-  }
-
-  /* Canvas wrapper: 横スクロールエリア、高さは500pxに固定 */
-  .game-canvas-wrap {
-    width: 100%;
-    height: 500px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
-    flex-shrink: 0;
-  }
-
-  /* Canvas: 800×500固定。#gameCanvasのwidth:100%をここで上書き */
-  #gameCanvas {
-    width: 800px !important;
-    height: 500px !important;
-    display: block;
-    flex-shrink: 0;
-  }
-
-  /* コントロールバー: 幅いっぱい・縦積み */
-  .game-controls-bar {
-    width: 100%;
-    box-sizing: border-box;
-    flex-direction: column;
-    gap: 6px;
-    padding: 8px 10px;
-  }
-
-  .build-scroll {
-    width: 100%;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .inspect-bar {
-    width: 100%;
-    font-size: 0.65rem;
-    min-height: 40px;
+  /* ゲーム画面以外はoverflowを維持 */
+  #screen-title,
+  #screen-stage,
+  #screen-party,
+  #screen-gacha {
+    overflow: hidden;
   }
 }
