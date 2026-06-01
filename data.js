@@ -9,6 +9,9 @@ const playerData = {
   party: [0,1]
 };
 
+// Tower max upgrade level
+const TOWER_MAX_LV = 5;
+
 const CHAR_TEMPLATES = [
   { id:0, name:"BLASTER",  type:"連射型",   rarity:"R",  cost:50,  color:"#00e8ff", range:120, damage:15, cooldown:20, max:10, desc:"プラズマを連射。序盤の主力ユニット。" },
   { id:1, name:"SNIPER",   type:"単体狙撃", rarity:"SR", cost:130, color:"#ffaa00", range:280, damage:75, cooldown:85, max:5,  desc:"超遠距離の高電圧狙撃。貫通弾丸。" },
@@ -23,7 +26,9 @@ const CHAR_TEMPLATES = [
 const RARITY_COLORS = { R: "#00e8ff", SR: "#cc44ff", SSR: "#ffd700" };
 
 const STAGE_TEMPLATES = [
-  { id:0, name:"NEON FOREST",     biome:"forest", diff:"NORMAL", gimmick:"植物活性: FREEZERの射程1.3倍", color:"#00ff88", waves:5 },
-  { id:1, name:"DESERT MATRIX",   biome:"desert", diff:"HARD",   gimmick:"熱波暴走: 敵の移動速度1.2倍", color:"#ffaa00", waves:5 },
-  { id:2, name:"CYBER CORE CITY", biome:"cyber",  diff:"EXPERT", gimmick:"電力安定: タワー攻撃力1.1倍", color:"#00e8ff", waves:5 }
+  { id:0, name:"NEON FOREST",     biome:"forest", diff:"NORMAL", gimmick:"植物活性: FREEZERの射程1.3倍", color:"#00ff88", waves:7,  startMoney:130, startHp:20 },
+  { id:1, name:"DESERT MATRIX",   biome:"desert", diff:"HARD",   gimmick:"熱波暴走: 敵の移動速度1.35倍", color:"#ffaa00", waves:8,  startMoney:110, startHp:15 },
+  { id:2, name:"CYBER CORE CITY", biome:"cyber",  diff:"EXPERT", gimmick:"電力安定: タワー攻撃力1.1倍 / 敵HP1.5倍", color:"#00e8ff", waves:10, startMoney:90,  startHp:10 }
 ];
+
+// Overwrite STAGE_TEMPLATES with harder versions
