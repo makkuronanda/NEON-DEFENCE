@@ -67,7 +67,8 @@ function renderStages() {
       </div>
       <div class="stage-gimmick">▸ ${s.gimmick}</div>
       <div style="display:flex;gap:8px;align-items:center;">
-        <span class="stage-badge" style="border:1px solid #2a3050;color:#668;">${s.waves} WAVE</span>
+        <span class="stage-badge" style="border:1px solid #2a3050;color:#668;">${s.waves} WAVES</span>
+        <span class="stage-badge" style="border:1px solid #2a3050;color:#668;">START: ${s.startMoney||150}C / ${s.startHp||20}HP</span>
         <span class="stage-badge" style="border:1px solid #2a3050;color:#668;">BOSS OVERDRIVE</span>
       </div>
     `;
