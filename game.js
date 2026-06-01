@@ -115,12 +115,13 @@ function updateGameUI() {
     const uc = t.getUpgradeCost();
     const ranks = ['Basic','Advanced','Overdrive!!'];
     panel.innerHTML = `
-      <div style="line-height:1.4;font-size:0.68rem;flex:1;min-width:0;">
+      <div style="line-height:1.5;font-size:0.72rem;">
         <span style="font-family:var(--font-main);color:${t.tmpl.color}">${t.tmpl.name}</span>
         <span style="color:#557;"> [${ranks[Math.min(t.lv-1,2)]} LV${t.lv}]</span><br>
-        <span style="color:#aab;">ATK:<span style="color:var(--green)"> ${Math.floor(t.getDamage())}</span>　RNG: ${Math.floor(t.getRange())}</span>
+        ATK:<span style="color:var(--green)"> ${Math.floor(t.getDamage())}</span>　
+        RNG: <span style="color:#aab">${Math.floor(t.getRange())}</span>
       </div>
-      <button class="btn-evolve" onclick="upgradeTower()" ${gameState.money < uc ? 'disabled' : ''}>EVOLVE<br><span style="font-size:0.7em;">${uc}C</span></button>
+      <button class="btn-evolve" onclick="upgradeTower()" ${gameState.money < uc ? 'disabled' : ''}>EVOLVE ${uc}C</button>
     `;
   } else {
     panel.innerHTML = `<span style="color:#446;font-size:0.65rem;letter-spacing:1px;">タップしてタワー配置 / タワーをタップで選択・強化</span>`;
