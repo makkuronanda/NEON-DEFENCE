@@ -33,12 +33,13 @@ function startBattle(stageData) {
 
   gameState = {
     state: 'playing', stage: stageData,
-    hp: 20, money: 150, wave: 1, frame: 0,
+    hp: stageData.startHp || 20, money: stageData.startMoney || 150, wave: 1, frame: 0,
     enemies: [], towers: [], projectiles: [],
     particles: [], floatingTexts: [], railBeams: [],
     selectedBuildIdx: 0, selectedTower: null, hoverCell: null,
     spawnedBoss: false, waveTimer: 0,
-    stageActiveChars: [], screenShake: 0
+    stageActiveChars: [], screenShake: 0,
+    targetMode: 'first'   // 'first' | 'last' | 'strongest' | 'weakest'
   };
 
   document.getElementById('g-gimmick').innerText = 'GIMMICK: ' + stageData.gimmick;
@@ -99,7 +100,7 @@ function updateGameUI() {
   if (!gameState) return;
   document.getElementById('g-hp').innerText    = gameState.hp;
   document.getElementById('g-money').innerText = gameState.money;
-  document.getElementById('g-wave').innerText  = `${gameState.wave}/5`;
+  document.getElementById('g-wave').innerText  = `${gameState.wave}/${gameState.stage.waves}`;
 
   gameState.stageActiveChars.forEach((t, i) => {
     const btn = document.getElementById(`gbtn-${i}`);
@@ -114,14 +115,23 @@ function updateGameUI() {
     const t  = gameState.selectedTower;
     const uc = t.getUpgradeCost();
     const ranks = ['Basic','Advanced','Overdrive!!'];
+    const atMax = t.lv >= TOWER_MAX_LV;
+    const sellAmt = Math.floor(t.tmpl.cost * 0.6);
     panel.innerHTML = `
       <div style="line-height:1.5;font-size:0.72rem;">
         <span style="font-family:var(--font-main);color:${t.tmpl.color}">${t.tmpl.name}</span>
-        <span style="color:#557;"> [${ranks[Math.min(t.lv-1,2)]} LV${t.lv}]</span><br>
+        <span style="color:#557;"> [LV${t.lv}/${TOWER_MAX_LV}]</span><br>
         ATK:<span style="color:var(--green)"> ${Math.floor(t.getDamage())}</span>　
         RNG: <span style="color:#aab">${Math.floor(t.getRange())}</span>
       </div>
-      <button class="btn-evolve" onclick="upgradeTower()" ${gameState.money < uc ? 'disabled' : ''}>EVOLVE ${uc}C</button>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <button class="btn-evolve" onclick="upgradeTower()" ${(atMax || gameState.money < uc) ? 'disabled' : ''}>${atMax ? 'MAX' : 'EVOLVE ' + uc + 'C'}</button>
+        <button class="btn-sell" onclick="sellTower()">SELL ${sellAmt}C</button>
+      </div>
+      <div style="display:flex;gap:4px;align-items:center;margin-top:4px;">
+        <span style="font-size:0.58rem;color:#446;letter-spacing:1px;">TARGET:</span>
+        ${['first','last','strongest','weakest'].map(m=>`<button class="btn-target${gameState.targetMode===m?' active':''}" onclick="setTargetMode('${m}')">${{first:'前線',last:'最後',strongest:'最強',weakest:'最弱'}[m]}</button>`).join('')}
+      </div>
     `;
   } else {
     panel.innerHTML = `<span style="color:#446;font-size:0.65rem;letter-spacing:1px;">タップしてタワー配置 / タワーをタップで選択・強化</span>`;
@@ -136,6 +146,7 @@ function updateGameUI() {
 function upgradeTower() {
   if (!gameState?.selectedTower) return;
   const t = gameState.selectedTower;
+  if (t.lv >= TOWER_MAX_LV) return;
   const c = t.getUpgradeCost();
   if (gameState.money >= c) {
     gameState.money -= c;
@@ -145,6 +156,24 @@ function upgradeTower() {
     gameState.screenShake = 8;
     updateGameUI();
   }
+}
+
+function sellTower() {
+  if (!gameState?.selectedTower) return;
+  const t = gameState.selectedTower;
+  const refund = Math.floor(t.tmpl.cost * 0.6);
+  gameState.towers = gameState.towers.filter(tw => tw !== t);
+  gameState.money += refund;
+  gameState.floatingTexts.push(new FloatText(t.x, t.y, `SELL +${refund}C`, '#ffaa00'));
+  spawnParticles(t.x, t.y, t.tmpl.color, 20);
+  gameState.selectedTower = null;
+  updateGameUI();
+}
+
+function setTargetMode(mode) {
+  if (!gameState) return;
+  gameState.targetMode = mode;
+  updateGameUI();
 }
 
 function showModal(title, desc, color) {
@@ -174,24 +203,40 @@ class Enemy {
     this.slowTimer = 0;
     this.isBoss    = isBoss;
 
-    let hm = 1 + wave * 0.4;
+    // Scale more steeply with wave
+    let hm = 1 + wave * 0.55;
+    // Expert (cyber) enemies are beefier
+    if (gameState.stage.biome === 'cyber') hm *= 1.5;
     if (isBoss) {
-      this.type = 'BOSS'; this.spd = 0.5;
-      this.maxHp = 700 * hm; this.color = '#cc44ff'; this.sz = 26; this.reward = 160;
+      this.type = 'BOSS'; this.spd = 0.6 + wave * 0.04;
+      this.maxHp = 900 * hm; this.color = '#cc44ff'; this.sz = 26; this.reward = 200;
+      // Boss regen on later waves
+      this.regenRate = wave >= 4 ? 0.6 : 0;
     } else {
-      const types = ['NORM','RUN','TANK','SHIELD','SWARM'];
-      const t = types[Math.floor(Math.random() * types.length)];
+      const types = ['NORM','RUN','TANK','SHIELD','SWARM','REGEN','GHOST'];
+      // Weight: rarer types appear more often in later waves
+      const weights = [3, 3, 2, 2, 3,
+        wave >= 3 ? 2 : 0,   // REGEN only from wave 3
+        wave >= 5 ? 2 : 0    // GHOST only from wave 5
+      ];
+      const total = weights.reduce((a,b)=>a+b,0);
+      let rnd = Math.random() * total, t = types[0];
+      for (let wi=0;wi<types.length;wi++) { rnd -= weights[wi]; if (rnd <= 0) { t = types[wi]; break; } }
       this.type = t;
       const cfg = {
-        NORM:   { spd:1.4,  maxHp:40*hm,  color:'#ff4466', sz:13, reward:10 },
-        RUN:    { spd:2.8,  maxHp:22*hm,  color:'#ff55bb', sz:11, reward:14 },
-        TANK:   { spd:0.65, maxHp:120*hm, color:'#ffaa00', sz:18, reward:22 },
-        SHIELD: { spd:1.0,  maxHp:60*hm,  color:'#44ddff', sz:15, reward:18, shield:30*hm },
-        SWARM:  { spd:2.0,  maxHp:15*hm,  color:'#44ff99', sz:9,  reward:7  },
+        NORM:   { spd:1.5,  maxHp:45*hm,   color:'#ff4466', sz:13, reward:12 },
+        RUN:    { spd:3.2,  maxHp:25*hm,   color:'#ff55bb', sz:11, reward:16 },
+        TANK:   { spd:0.7,  maxHp:150*hm,  color:'#ffaa00', sz:19, reward:28 },
+        SHIELD: { spd:1.1,  maxHp:70*hm,   color:'#44ddff', sz:15, reward:22, shield:40*hm },
+        SWARM:  { spd:2.3,  maxHp:18*hm,   color:'#44ff99', sz:9,  reward:8  },
+        REGEN:  { spd:1.2,  maxHp:80*hm,   color:'#ff9900', sz:14, reward:20, regenRate:1.5 },
+        GHOST:  { spd:1.8,  maxHp:55*hm,   color:'#cc88ff', sz:12, reward:24, ghosted:true  },
       };
       Object.assign(this, cfg[t]);
+      if (!this.regenRate) this.regenRate = 0;
+      if (!this.ghosted)   this.ghosted   = false;
     }
-    if (gameState.stage.biome === 'desert') this.spd *= 1.2;
+    if (gameState.stage.biome === 'desert') this.spd *= 1.35;
     this.hp = this.maxHp;
     if (!this.shield) this.shield = 0;
   }
@@ -201,6 +246,10 @@ class Enemy {
     if (!tgt) return;
     let s = this.spd;
     if (this.slowTimer > 0) { s *= 0.45; this.slowTimer--; }
+    // Regen HP
+    if (this.regenRate > 0 && this.hp > 0 && this.hp < this.maxHp) {
+      this.hp = Math.min(this.maxHp, this.hp + this.regenRate);
+    }
     const dx = tgt.x - this.x, dy = tgt.y - this.y, d = Math.hypot(dx, dy);
     this.angle = Math.atan2(dy, dx);
     if (d < s) {
@@ -232,7 +281,8 @@ class Enemy {
     ctx.shadowColor = this.color;
     ctx.strokeStyle = this.color;
     ctx.lineWidth   = 2;
-    ctx.fillStyle   = 'rgba(4,4,20,0.88)';
+    ctx.fillStyle   = this.ghosted ? 'rgba(40,10,60,0.5)' : 'rgba(4,4,20,0.88)';
+    if (this.ghosted) ctx.globalAlpha = 0.65;
     ctx.rotate(this.angle);
 
     if (this.isBoss) {
@@ -295,6 +345,26 @@ class Enemy {
         ctx.arc(Math.cos(a) * this.sz * 0.5, Math.sin(a) * this.sz * 0.5, this.sz * 0.4, 0, Math.PI * 2);
         ctx.fill(); ctx.stroke();
       }
+    } else if (this.type === 'REGEN') {
+      ctx.rotate(gameState.frame * 0.02);
+      for (let i = 0; i < 5; i++) {
+        const a = Math.PI * 2 / 5 * i;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(Math.cos(a) * this.sz, Math.sin(a) * this.sz);
+        ctx.stroke();
+      }
+      ctx.beginPath(); ctx.arc(0, 0, this.sz * 0.5, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+    } else if (this.type === 'GHOST') {
+      ctx.globalAlpha = 0.45;
+      ctx.rotate(gameState.frame * 0.03);
+      ctx.beginPath();
+      ctx.arc(0, 0, this.sz, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+      ctx.globalAlpha = 0.7;
+      ctx.beginPath(); ctx.arc(0, 0, this.sz * 0.4, 0, Math.PI * 2);
+      ctx.fillStyle = '#cc88ff'; ctx.fill();
     }
 
     if (this.slowTimer > 0) {
@@ -373,10 +443,32 @@ class Tower {
 
   update() {
     if (this.cd > 0) { this.cd--; return; }
-    let tgt = null, minD = this.getRange();
-    for (const e of gameState.enemies) {
-      const d = Math.hypot(e.x - this.x, e.y - this.y);
-      if (d < minD) { minD = d; tgt = e; }
+    const rng = this.getRange();
+    const inRange = gameState.enemies.filter(e => Math.hypot(e.x - this.x, e.y - this.y) < rng);
+    if (inRange.length === 0) return;
+    let tgt = null;
+    const mode = gameState.targetMode || 'first';
+    if (mode === 'first') {
+      // furthest along path (highest pathIdx, then dist to next node)
+      inRange.sort((a,b) => {
+        if (b.pathIdx !== a.pathIdx) return b.pathIdx - a.pathIdx;
+        const da = Math.hypot(a.x - battlePath[a.pathIdx+1]?.x||a.x, a.y - battlePath[a.pathIdx+1]?.y||a.y);
+        const db = Math.hypot(b.x - battlePath[b.pathIdx+1]?.x||b.x, b.y - battlePath[b.pathIdx+1]?.y||b.y);
+        return da - db;
+      });
+      tgt = inRange[0];
+    } else if (mode === 'last') {
+      inRange.sort((a,b) => {
+        if (a.pathIdx !== b.pathIdx) return a.pathIdx - b.pathIdx;
+        const da = Math.hypot(a.x - battlePath[a.pathIdx+1]?.x||a.x, a.y - battlePath[a.pathIdx+1]?.y||a.y);
+        const db = Math.hypot(b.x - battlePath[b.pathIdx+1]?.x||b.x, b.y - battlePath[b.pathIdx+1]?.y||b.y);
+        return db - da;
+      });
+      tgt = inRange[0];
+    } else if (mode === 'strongest') {
+      tgt = inRange.reduce((best, e) => (e.hp + (e.shield||0)) > (best.hp + (best.shield||0)) ? e : best, inRange[0]);
+    } else if (mode === 'weakest') {
+      tgt = inRange.reduce((best, e) => (e.hp + (e.shield||0)) < (best.hp + (best.shield||0)) ? e : best, inRange[0]);
     }
     if (!tgt) return;
     this.angle = Math.atan2(tgt.y - this.y, tgt.x - this.x);
@@ -392,7 +484,8 @@ class Tower {
       addEffect({ type:'tesla', x:this.x, y:this.y, r:this.getRange(), t:8 });
 
     } else if (this.tmpl.id === 6) {
-      // RAILGUN – penetrate
+      // RAILGUN – penetrate (always aim at tgt)
+      this.angle = Math.atan2(tgt.y - this.y, tgt.x - this.x);
       const cos = Math.cos(this.angle), sin = Math.sin(this.angle);
       gameState.enemies.forEach(e => {
         const ex = e.x - this.x, ey = e.y - this.y;
@@ -512,9 +605,12 @@ class Projectile {
         gameState.enemies.forEach(e => { if (Math.hypot(e.x-this.x, e.y-this.y) <= 65) e.takeDamage(this.src.getDamage()); });
         gameState.screenShake = 6;
       } else if (this.src.tmpl.id === 5) {
-        this.tgt.hp -= this.src.getDamage(); // PHANTOM ignores shield
+        this.tgt.hp -= this.src.getDamage(); // PHANTOM ignores shield and ghost
       } else {
-        this.tgt.takeDamage(this.src.getDamage());
+        let dmg = this.src.getDamage();
+        // GHOST enemies take only 40% damage from non-PHANTOM
+        if (this.tgt.ghosted && this.src.tmpl.id !== 5) dmg *= 0.4;
+        this.tgt.takeDamage(dmg);
       }
       spawnParticles(this.x, this.y, this.src.tmpl.color, 7);
       this.alive = false;
@@ -745,10 +841,15 @@ function gameLoop() {
 
   // Spawn enemies
   gameState.waveTimer++;
-  const spawnInterval = Math.max(18, 50 - gameState.wave * 5);
-  if (gameState.waveTimer < 600 && gameState.waveTimer % spawnInterval === 0)
+  const spawnInterval = Math.max(14, 55 - gameState.wave * 5);
+  const spawnWindow = 500 + gameState.wave * 30;
+  if (gameState.waveTimer < spawnWindow && gameState.waveTimer % spawnInterval === 0) {
     gameState.enemies.push(new Enemy(gameState.wave, false));
-  if (gameState.wave === 5 && gameState.waveTimer >= 350 && !gameState.spawnedBoss) {
+    // Double-spawn on harder waves
+    if (gameState.wave >= 5 && Math.random() < 0.35)
+      gameState.enemies.push(new Enemy(gameState.wave, false));
+  }
+  if (gameState.wave === gameState.stage.waves && gameState.waveTimer >= 350 && !gameState.spawnedBoss) {
     gameState.enemies.push(new Enemy(gameState.wave, true));
     gameState.floatingTexts.push(new FloatText(canvas.width/2, 160, "⚠ OVERDRIVE BOSS DETECTED", "var(--red)"));
     gameState.spawnedBoss  = true;
@@ -757,11 +858,13 @@ function gameLoop() {
 
   // Wave progression
   if (gameState.enemies.length === 0 && gameState.waveTimer > 650) {
-    if (gameState.wave < 5) {
+    if (gameState.wave < gameState.stage.waves) {
       gameState.wave++;
       gameState.waveTimer  = 0;
-      gameState.money     += 80;
-      gameState.floatingTexts.push(new FloatText(canvas.width/2, 100, `WAVE ${gameState.wave} INITIALIZED`, '#00e8ff'));
+      gameState.spawnedBoss = false;
+      const waveBonus = 60 + gameState.wave * 10;
+      gameState.money += waveBonus;
+      gameState.floatingTexts.push(new FloatText(canvas.width/2, 100, `WAVE ${gameState.wave} / +${waveBonus}C`, '#00e8ff'));
       updateGameUI();
     } else if (gameState.state === 'playing') {
       gameState.state = 'clear';
