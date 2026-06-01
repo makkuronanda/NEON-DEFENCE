@@ -922,3 +922,34 @@ header {
     overflow: hidden;
   }
 }
+
+/* ============================================================
+   NEW: SELL + TARGET BUTTONS (in-game inspect panel)
+   ============================================================ */
+.btn-sell {
+  font-family: var(--font-main);
+  font-size: 0.62rem; letter-spacing: 1px; font-weight: 700;
+  background: rgba(255,170,0,0.12);
+  border: 1px solid var(--orange); color: var(--orange);
+  padding: 5px 10px; cursor: pointer; transition: all 0.2s;
+  white-space: nowrap;
+}
+.btn-sell:hover {
+  background: rgba(255,170,0,0.25);
+  box-shadow: 0 0 12px rgba(255,170,0,0.4);
+}
+
+.btn-target {
+  font-family: var(--font-mono);
+  font-size: 0.58rem; letter-spacing: 1px;
+  background: rgba(20,24,50,0.8);
+  border: 1px solid #1a2040; color: #446;
+  padding: 3px 7px; cursor: pointer; transition: all 0.18s;
+  white-space: nowrap;
+}
+.btn-target:hover { border-color: #334; color: #668; }
+.btn-target.active {
+  border-color: var(--cyan); color: var(--cyan);
+  background: rgba(0,245,255,0.08);
+  box-shadow: 0 0 8px rgba(0,245,255,0.25);
+}
