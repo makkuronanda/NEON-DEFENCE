@@ -583,7 +583,7 @@ header {
 .hud-label { font-size: 0.55rem; letter-spacing: 2px; color: #446; }
 .hud-val { font-family: var(--font-main); font-size: 0.95rem; font-weight: 700; }
 .game-canvas-wrap { position: relative; width: 800px; height: 500px; max-width: 100%; }
-canvas { display: block; width: 100%; height: 100%; }
+#gameCanvas { display: block; width: 100%; height: 100%; }
 .game-overlay {
   position: absolute; inset: 0; background: rgba(2,2,16,0.93);
   display: none; flex-direction: column; align-items: center; justify-content: center; gap: 20px; z-index: 50;
@@ -914,18 +914,18 @@ header {
     padding: 5px 8px;
   }
 
-  /* Canvas wrapper: 横スクロールエリア、高さはcanvasに追従 */
+  /* Canvas wrapper: 横スクロールエリア、高さは500pxに固定 */
   .game-canvas-wrap {
     width: 100%;
-    height: auto;
+    height: 500px;
     overflow-x: auto;
-    overflow-y: visible;
+    overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
     flex-shrink: 0;
   }
 
-  /* Canvas: 800×500固定のままスマホは横スクロール */
-  .game-canvas-wrap canvas {
+  /* Canvas: 800×500固定。#gameCanvasのwidth:100%をここで上書き */
+  #gameCanvas {
     width: 800px !important;
     height: 500px !important;
     display: block;
