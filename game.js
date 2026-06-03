@@ -8,20 +8,10 @@ const GS     = 40;
 const COLS   = canvas.width  / GS;
 const ROWS   = canvas.height / GS;
 
-// ──────────────────────────────────────────────
-//  MAP PATH
-// ──────────────────────────────────────────────
-const battlePath = [
-  {x:0,   y:140},
-  {x:400, y:140},
-  {x:400, y:360},
-  {x:120, y:360},
-  {x:120, y:450},
-  {x:800, y:450}
-];
-
-let pathCells = new Set();
-let effects   = [];
+// battlePath is set dynamically from stage
+let battlePath = [];
+let pathCells  = new Set();
+let effects    = [];
 
 // ──────────────────────────────────────────────
 //  GAME BOOTSTRAP
@@ -29,6 +19,9 @@ let effects   = [];
 function startBattle(stageData) {
   if (playerData.party.length === 0) { alert("編成してください。"); return; }
   switchScreen('game');
+
+  // Set the path for this stage
+  battlePath = ALL_PATHS[stageData.pathId ?? 0].map(p => ({...p}));
   buildPathCells();
 
   gameState = {
@@ -39,7 +32,8 @@ function startBattle(stageData) {
     selectedBuildIdx: 0, selectedTower: null, hoverCell: null,
     spawnedBoss: false, waveTimer: 0,
     stageActiveChars: [], screenShake: 0,
-    targetMode: 'first'   // 'first' | 'last' | 'strongest' | 'weakest'
+    targetMode: 'first',   // 'first' | 'last' | 'strongest' | 'weakest'
+    omegaBeams: []         // OMEGA全体攻撃エフェクト
   };
 
   document.getElementById('g-gimmick').innerText = 'GIMMICK: ' + stageData.gimmick;
@@ -114,9 +108,11 @@ function updateGameUI() {
   if (gameState.selectedTower) {
     const t  = gameState.selectedTower;
     const uc = t.getUpgradeCost();
-    const ranks = ['Basic','Advanced','Overdrive!!'];
     const atMax = t.lv >= TOWER_MAX_LV;
     const sellAmt = Math.floor(t.tmpl.cost * 0.6);
+    const heatBar = t.heat != null
+      ? `<div style="font-size:0.6rem;color:#ff8800;margin-top:2px;">HEAT: ${'▮'.repeat(Math.floor(t.heat/20))}${'▯'.repeat(5-Math.floor(t.heat/20))} ${Math.floor(t.heat)}%</div>`
+      : '';
     panel.innerHTML = `
       <div style="line-height:1.5;font-size:0.72rem;">
         <span style="font-family:var(--font-main);color:${t.tmpl.color}">${t.tmpl.name}</span>
@@ -124,6 +120,7 @@ function updateGameUI() {
         ATK:<span style="color:var(--green)"> ${Math.floor(t.getDamage())}</span>　
         RNG: <span style="color:#aab">${Math.floor(t.getRange())}</span>
       </div>
+      ${heatBar}
       <div style="display:flex;gap:6px;align-items:center;">
         <button class="btn-evolve" onclick="upgradeTower()" ${(atMax || gameState.money < uc) ? 'disabled' : ''}>${atMax ? 'MAX' : 'EVOLVE ' + uc + 'C'}</button>
         <button class="btn-sell" onclick="sellTower()">SELL ${sellAmt}C</button>
@@ -139,7 +136,22 @@ function updateGameUI() {
 
   if (gameState.hp <= 0 && gameState.state === 'playing') {
     gameState.state = 'gameover';
-    showModal("SYSTEM FAILURE", "防衛グリッドの完全崩壊。結晶データは回収できませんでした。", "var(--red)");
+    // Partial reward based on waves survived
+    const totalWaves = gameState.stage.waves;
+    const wavesDone  = gameState.wave - 1;  // completed waves
+    const baseReward = 300 + (gameState.stage.id >= 3 ? 150 : 0);
+    const partialReward = wavesDone > 0
+      ? Math.floor(baseReward * (wavesDone / totalWaves) * 0.5)
+      : 0;
+    if (partialReward > 0) {
+      playerData.crystals += partialReward;
+      if (typeof autoSave === 'function') autoSave('gameover-partial');
+      if (typeof updateMeta === 'function') updateMeta();
+    }
+    const rewardMsg = partialReward > 0
+      ? `\nWAVE ${wavesDone}/${totalWaves} まで防衛。残存データより ${partialReward} コア結晶を回収した。`
+      : `\n防衛記録なし。コア結晶は回収できなかった。`;
+    showModal("SYSTEM FAILURE", "防衛グリッド崩壊。" + rewardMsg, "var(--red)");
   }
 }
 
@@ -202,41 +214,68 @@ class Enemy {
     this.angle     = 0;
     this.slowTimer = 0;
     this.isBoss    = isBoss;
+    this.infected  = 0;  // DOT countdown for VIRUS
+
+    const biome = gameState.stage.biome;
 
     // Scale more steeply with wave
     let hm = 1 + wave * 0.55;
-    // Expert (cyber) enemies are beefier
-    if (gameState.stage.biome === 'cyber') hm *= 1.5;
+    if (biome === 'cyber')  hm *= 1.5;
+    if (biome === 'void')   hm *= 1.3;
+    if (biome === 'storm')  hm *= 1.6;
+
     if (isBoss) {
       this.type = 'BOSS'; this.spd = 0.6 + wave * 0.04;
-      this.maxHp = 900 * hm; this.color = '#cc44ff'; this.sz = 26; this.reward = 200;
-      // Boss regen on later waves
+      this.maxHp = 900 * hm; this.sz = 26; this.reward = 200;
+      // Boss colour by biome
+      const bossColors = { forest:'#cc44ff', desert:'#ff8800', cyber:'#00eeff',
+                           void:'#ff00ff', swamp:'#88ff00', storm:'#ffff00' };
+      this.color = bossColors[biome] || '#cc44ff';
       this.regenRate = wave >= 4 ? 0.6 : 0;
     } else {
-      const types = ['NORM','RUN','TANK','SHIELD','SWARM','REGEN','GHOST'];
-      // Weight: rarer types appear more often in later waves
-      const weights = [3, 3, 2, 2, 3,
-        wave >= 3 ? 2 : 0,   // REGEN only from wave 3
-        wave >= 5 ? 2 : 0    // GHOST only from wave 5
+      // void stage forces more GHOST
+      const ghostBoost = biome === 'void' ? 5 : (wave >= 5 ? 2 : 0);
+      // swamp stage forces more REGEN
+      const regenBoost = biome === 'swamp' ? 4 : (wave >= 3 ? 2 : 0);
+
+      const types   = ['NORM','RUN','TANK','SHIELD','SWARM','REGEN','GHOST','ARMOR','SPLITTER'];
+      const weights = [
+        3,                           // NORM
+        3,                           // RUN
+        2,                           // TANK
+        2,                           // SHIELD
+        3,                           // SWARM
+        regenBoost,                  // REGEN
+        ghostBoost,                  // GHOST
+        wave >= 4 ? 2 : 0,           // ARMOR (new) — from wave 4
+        wave >= 6 ? 1 : 0,           // SPLITTER (new) — from wave 6
       ];
       const total = weights.reduce((a,b)=>a+b,0);
       let rnd = Math.random() * total, t = types[0];
       for (let wi=0;wi<types.length;wi++) { rnd -= weights[wi]; if (rnd <= 0) { t = types[wi]; break; } }
       this.type = t;
       const cfg = {
-        NORM:   { spd:1.5,  maxHp:45*hm,   color:'#ff4466', sz:13, reward:12 },
-        RUN:    { spd:3.2,  maxHp:25*hm,   color:'#ff55bb', sz:11, reward:16 },
-        TANK:   { spd:0.7,  maxHp:150*hm,  color:'#ffaa00', sz:19, reward:28 },
-        SHIELD: { spd:1.1,  maxHp:70*hm,   color:'#44ddff', sz:15, reward:22, shield:40*hm },
-        SWARM:  { spd:2.3,  maxHp:18*hm,   color:'#44ff99', sz:9,  reward:8  },
-        REGEN:  { spd:1.2,  maxHp:80*hm,   color:'#ff9900', sz:14, reward:20, regenRate:1.5 },
-        GHOST:  { spd:1.8,  maxHp:55*hm,   color:'#cc88ff', sz:12, reward:24, ghosted:true  },
+        NORM:     { spd:1.5,  maxHp:45*hm,   color:'#ff4466', sz:13, reward:12 },
+        RUN:      { spd:3.2,  maxHp:25*hm,   color:'#ff55bb', sz:11, reward:16 },
+        TANK:     { spd:0.7,  maxHp:150*hm,  color:'#ffaa00', sz:19, reward:28 },
+        SHIELD:   { spd:1.1,  maxHp:70*hm,   color:'#44ddff', sz:15, reward:22, shield:40*hm },
+        SWARM:    { spd:2.3,  maxHp:18*hm,   color:'#44ff99', sz:9,  reward:8  },
+        REGEN:    { spd:1.2,  maxHp:80*hm,   color:'#88ff44', sz:14, reward:20, regenRate:1.5 },
+        GHOST:    { spd:1.8,  maxHp:55*hm,   color:'#cc88ff', sz:12, reward:24, ghosted:true  },
+        ARMOR:    { spd:0.9,  maxHp:110*hm,  color:'#cc6600', sz:17, reward:30, armored:true  }, // 物理50%軽減
+        SPLITTER: { spd:1.6,  maxHp:60*hm,   color:'#ff6688', sz:15, reward:35, splits:true   }, // 死亡時に2体のSWARMを生成
       };
       Object.assign(this, cfg[t]);
       if (!this.regenRate) this.regenRate = 0;
       if (!this.ghosted)   this.ghosted   = false;
+      if (!this.armored)   this.armored   = false;
+      if (!this.splits)    this.splits    = false;
     }
-    if (gameState.stage.biome === 'desert') this.spd *= 1.35;
+
+    // biome speed modifiers
+    if (biome === 'desert') this.spd *= 1.35;
+    if (biome === 'storm')  this.spd *= 1.2;
+
     this.hp = this.maxHp;
     if (!this.shield) this.shield = 0;
   }
@@ -246,10 +285,23 @@ class Enemy {
     if (!tgt) return;
     let s = this.spd;
     if (this.slowTimer > 0) { s *= 0.45; this.slowTimer--; }
+
+    // VORTEX pull (handled in Tower.update, but enemies get a flag)
+    if (this.pulled) { s *= 0.5; this.pulled = false; }
+
     // Regen HP
     if (this.regenRate > 0 && this.hp > 0 && this.hp < this.maxHp) {
-      this.hp = Math.min(this.maxHp, this.hp + this.regenRate);
+      let rr = this.regenRate;
+      if (gameState.stage.biome === 'swamp') rr *= 1.5;
+      this.hp = Math.min(this.maxHp, this.hp + rr);
     }
+
+    // VIRUS DOT damage
+    if (this.infected > 0) {
+      this.hp -= 1.0;
+      this.infected--;
+    }
+
     const dx = tgt.x - this.x, dy = tgt.y - this.y, d = Math.hypot(dx, dy);
     this.angle = Math.atan2(dy, dx);
     if (d < s) {
@@ -266,6 +318,7 @@ class Enemy {
   }
 
   takeDamage(dmg) {
+    if (this.armored) dmg *= 0.5;  // ARMOR type — 50% damage reduction
     if (this.shield > 0) {
       this.shield -= dmg;
       if (this.shield < 0) { this.hp += this.shield; this.shield = 0; }
@@ -301,7 +354,7 @@ class Enemy {
         ctx.restore();
       }
       ctx.beginPath(); ctx.arc(0, 0, this.sz * 0.3, 0, Math.PI * 2);
-      ctx.fillStyle = '#cc44ff'; ctx.fill();
+      ctx.fillStyle = this.color; ctx.fill();
 
     } else if (this.type === 'NORM') {
       ctx.rotate(gameState.frame * 0.04);
@@ -356,6 +409,7 @@ class Enemy {
       }
       ctx.beginPath(); ctx.arc(0, 0, this.sz * 0.5, 0, Math.PI * 2);
       ctx.fill(); ctx.stroke();
+
     } else if (this.type === 'GHOST') {
       ctx.globalAlpha = 0.45;
       ctx.rotate(gameState.frame * 0.03);
@@ -365,6 +419,43 @@ class Enemy {
       ctx.globalAlpha = 0.7;
       ctx.beginPath(); ctx.arc(0, 0, this.sz * 0.4, 0, Math.PI * 2);
       ctx.fillStyle = '#cc88ff'; ctx.fill();
+
+    } else if (this.type === 'ARMOR') {
+      // ヘキサゴン + 外装プレート
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = Math.PI/3*i - Math.PI/6;
+        ctx.lineTo(Math.cos(a)*this.sz, Math.sin(a)*this.sz);
+      }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.lineWidth = 3; ctx.globalAlpha = 0.6;
+      for (let i = 0; i < 6; i++) {
+        const a1 = Math.PI/3*i - Math.PI/6, a2 = Math.PI/3*(i+1) - Math.PI/6;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a1)*this.sz*1.15, Math.sin(a1)*this.sz*1.15);
+        ctx.lineTo(Math.cos(a2)*this.sz*1.15, Math.sin(a2)*this.sz*1.15);
+        ctx.stroke();
+      }
+
+    } else if (this.type === 'SPLITTER') {
+      // ダイヤモンド型 + 内部の分裂ライン
+      ctx.beginPath();
+      ctx.moveTo(0, -this.sz); ctx.lineTo(this.sz, 0);
+      ctx.lineTo(0, this.sz);  ctx.lineTo(-this.sz, 0);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.setLineDash([3,3]);
+      ctx.beginPath(); ctx.moveTo(-this.sz*0.7, 0); ctx.lineTo(this.sz*0.7, 0); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, -this.sz*0.7); ctx.lineTo(0, this.sz*0.7); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // INFECTED indicator
+    if (this.infected > 0) {
+      ctx.rotate(-this.angle);
+      ctx.strokeStyle = '#55ff44'; ctx.lineWidth = 1.5; ctx.setLineDash([2,2]);
+      ctx.globalAlpha = 0.7;
+      ctx.beginPath(); ctx.arc(0, 0, this.sz + 6, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
     }
 
     if (this.slowTimer > 0) {
@@ -390,7 +481,6 @@ class Enemy {
     ctx.fillStyle = hpR > 0.5 ? '#00ff88' : hpR > 0.25 ? '#ffaa00' : '#ff3355';
     ctx.fillRect(this.x - bw/2, barY, bw * hpR, 5);
 
-    // Enemy type label above HP bar (improved visibility)
     if (!this.isBoss) {
       ctx.save();
       ctx.font = 'bold 8px "Share Tech Mono", monospace';
@@ -402,11 +492,11 @@ class Enemy {
     } else {
       ctx.save();
       ctx.font = 'bold 10px "Orbitron", monospace';
-      ctx.fillStyle = '#cc44ff';
+      ctx.fillStyle = this.color;
       ctx.globalAlpha = 1;
       ctx.textAlign = 'center';
-      ctx.shadowBlur = 10; ctx.shadowColor = '#cc44ff';
-      ctx.fillText('BOSS', this.x, barY - 10);
+      ctx.shadowBlur = 10; ctx.shadowColor = this.color;
+      ctx.fillText('OVERDRIVE BOSS', this.x, barY - 10);
       ctx.restore();
     }
   }
@@ -422,6 +512,8 @@ class Tower {
     this.y    = r * GS + GS / 2;
     this.tmpl = tmpl;
     this.lv   = 1; this.cd = 0; this.angle = 0;
+    // OVERLOAD heat gauge
+    if (tmpl.special === 'overload') this.heat = 0;
   }
 
   getDamage() {
@@ -436,32 +528,45 @@ class Tower {
     let r = this.tmpl.range + (this.lv - 1) * 12;
     if (gameState.stage.biome === 'forest' && this.tmpl.id === 2) r *= 1.3;
     if (this.tmpl.id === 6) r = 800;
+    // Storm stage: TESLA range ×1.5
+    if (gameState.stage.biome === 'storm' && this.tmpl.id === 3) r *= 1.5;
+    // VORTEX bonus on void stage
+    if (gameState.stage.biome === 'void' && this.tmpl.special === 'vortex') r *= 1.3;
     return r;
   }
 
   getUpgradeCost() { return Math.floor(this.tmpl.cost * 0.9 * this.lv); }
+
+  // CD with storm gimmick
+  getCooldown() {
+    let cd = this.tmpl.cooldown;
+    if (gameState.stage.biome === 'storm') cd = Math.floor(cd * 1.2);
+    return cd;
+  }
 
   update() {
     if (this.cd > 0) { this.cd--; return; }
     const rng = this.getRange();
     const inRange = gameState.enemies.filter(e => Math.hypot(e.x - this.x, e.y - this.y) < rng);
     if (inRange.length === 0) return;
+
     let tgt = null;
     const mode = gameState.targetMode || 'first';
     if (mode === 'first') {
-      // furthest along path (highest pathIdx, then dist to next node)
       inRange.sort((a,b) => {
         if (b.pathIdx !== a.pathIdx) return b.pathIdx - a.pathIdx;
-        const da = Math.hypot(a.x - battlePath[a.pathIdx+1]?.x||a.x, a.y - battlePath[a.pathIdx+1]?.y||a.y);
-        const db = Math.hypot(b.x - battlePath[b.pathIdx+1]?.x||b.x, b.y - battlePath[b.pathIdx+1]?.y||b.y);
+        const nA = battlePath[a.pathIdx+1], nB = battlePath[b.pathIdx+1];
+        const da = nA ? Math.hypot(a.x-nA.x, a.y-nA.y) : 0;
+        const db = nB ? Math.hypot(b.x-nB.x, b.y-nB.y) : 0;
         return da - db;
       });
       tgt = inRange[0];
     } else if (mode === 'last') {
       inRange.sort((a,b) => {
         if (a.pathIdx !== b.pathIdx) return a.pathIdx - b.pathIdx;
-        const da = Math.hypot(a.x - battlePath[a.pathIdx+1]?.x||a.x, a.y - battlePath[a.pathIdx+1]?.y||a.y);
-        const db = Math.hypot(b.x - battlePath[b.pathIdx+1]?.x||b.x, b.y - battlePath[b.pathIdx+1]?.y||b.y);
+        const nA = battlePath[a.pathIdx+1], nB = battlePath[b.pathIdx+1];
+        const da = nA ? Math.hypot(a.x-nA.x, a.y-nA.y) : 0;
+        const db = nB ? Math.hypot(b.x-nB.x, b.y-nB.y) : 0;
         return db - da;
       });
       tgt = inRange[0];
@@ -473,8 +578,11 @@ class Tower {
     if (!tgt) return;
     this.angle = Math.atan2(tgt.y - this.y, tgt.x - this.x);
 
+    // ── SPECIAL ATTACK DISPATCH ────────────────────────────────────
+    const sp = this.tmpl.special;
+
     if (this.tmpl.id === 3) {
-      // TESLA – AOE
+      // TESLA – AOE pulse (storm stage triggers full aoe on every shot)
       gameState.enemies.forEach(e => {
         if (Math.hypot(e.x - this.x, e.y - this.y) <= this.getRange()) {
           e.takeDamage(this.getDamage());
@@ -484,7 +592,7 @@ class Tower {
       addEffect({ type:'tesla', x:this.x, y:this.y, r:this.getRange(), t:8 });
 
     } else if (this.tmpl.id === 6) {
-      // RAILGUN – penetrate (always aim at tgt)
+      // RAILGUN
       this.angle = Math.atan2(tgt.y - this.y, tgt.x - this.x);
       const cos = Math.cos(this.angle), sin = Math.sin(this.angle);
       gameState.enemies.forEach(e => {
@@ -502,6 +610,58 @@ class Tower {
         t:12, color:this.tmpl.color
       });
 
+    } else if (sp === 'vortex') {
+      // VORTEX — pull enemies toward tower, then damage
+      const pullMult = gameState.stage.biome === 'void' ? 2 : 1;
+      inRange.forEach(e => {
+        const dx = this.x - e.x, dy = this.y - e.y;
+        const d  = Math.hypot(dx, dy) || 1;
+        e.x += (dx/d) * 6 * pullMult;
+        e.y += (dy/d) * 6 * pullMult;
+        e.pulled = true;
+        e.takeDamage(this.getDamage());
+        spawnParticles(e.x, e.y, this.tmpl.color, 3);
+      });
+      addEffect({ type:'vortex', x:this.x, y:this.y, r:this.getRange(), t:12 });
+
+    } else if (sp === 'virus') {
+      // VIRUS — infect target with DOT
+      const infectDuration = gameState.stage.biome === 'swamp' ? 220 : 150;
+      tgt.infected = infectDuration;
+      gameState.projectiles.push(new Projectile(this.x, this.y, tgt, this));
+      spawnParticles(tgt.x, tgt.y, '#55ff44', 8);
+
+    } else if (sp === 'overload') {
+      // OVERLOAD — accumulate heat; at 100 trigger explosion
+      this.heat = (this.heat || 0) + 22;
+      if (this.heat >= 100) {
+        // OVERHEAT BLAST
+        addEffect({ type:'explosion', x:this.x, y:this.y, r:90, t:16 });
+        gameState.enemies.forEach(e => {
+          if (Math.hypot(e.x-this.x, e.y-this.y) <= 90) e.takeDamage(this.getDamage() * 4);
+        });
+        gameState.floatingTexts.push(new FloatText(this.x, this.y, 'OVERHEAT!!', '#ff8800'));
+        gameState.screenShake = 12;
+        this.heat = 0;
+      } else {
+        gameState.projectiles.push(new Projectile(this.x, this.y, tgt, this));
+      }
+
+    } else if (sp === 'mirror') {
+      // MIRROR — projectile bounces to a second enemy
+      gameState.projectiles.push(new MirrorProjectile(this.x, this.y, tgt, this, inRange));
+
+    } else if (sp === 'omega') {
+      // OMEGA — attack ALL enemies in range simultaneously
+      inRange.forEach(e => {
+        e.takeDamage(this.getDamage());
+        spawnParticles(e.x, e.y, '#ff2200', 12);
+        // beam from tower to each enemy
+        gameState.omegaBeams.push({ x1:this.x, y1:this.y, x2:e.x, y2:e.y, t:14 });
+      });
+      gameState.screenShake = 15;
+      gameState.floatingTexts.push(new FloatText(this.x, this.y, `OMEGA×${inRange.length}`, '#ff2200'));
+
     } else {
       gameState.projectiles.push(new Projectile(this.x, this.y, tgt, this));
       if (this.lv >= 2 && Math.random() < 0.35) {
@@ -512,7 +672,7 @@ class Tower {
         }, 70);
       }
     }
-    this.cd = this.tmpl.cooldown;
+    this.cd = this.getCooldown();
   }
 
   draw() {
@@ -551,6 +711,16 @@ class Tower {
       ctx.lineWidth   = gameState.selectedTower === this ? 2.5 : 1.8;
     }
 
+    // OVERLOAD heat aura
+    if (this.heat != null && this.heat > 0) {
+      const heatAlpha = this.heat / 100 * 0.5;
+      ctx.save();
+      ctx.beginPath(); ctx.arc(0, 0, 18 + this.heat * 0.2, 0, Math.PI*2);
+      ctx.fillStyle = `rgba(255,${Math.floor(136*(1-this.heat/100))},0,${heatAlpha})`;
+      ctx.fill();
+      ctx.restore();
+    }
+
     this.drawShape();
 
     // Barrel
@@ -580,12 +750,51 @@ class Tower {
       ctx.strokeRect(-6,-6,12,12);
     } else if (id===6) {
       ctx.beginPath(); ctx.moveTo(-5,-16); ctx.lineTo(5,-16); ctx.lineTo(8,16); ctx.lineTo(-8,16); ctx.closePath(); ctx.fill(); ctx.stroke();
+    } else if (id===8) {
+      // VORTEX — spiral shape
+      ctx.beginPath(); ctx.arc(0,0,13,0,Math.PI*2); ctx.fill(); ctx.stroke();
+      ctx.save();
+      ctx.rotate(gameState.frame * 0.05);
+      ctx.strokeStyle = this.tmpl.color + 'aa'; ctx.lineWidth=1;
+      for (let i = 0; i < 3; i++) {
+        const a = Math.PI*2/3*i;
+        ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(Math.cos(a)*13, Math.sin(a)*13); ctx.stroke();
+      }
+      ctx.restore();
+    } else if (id===9) {
+      // VIRUS — biohazard shape
+      ctx.beginPath(); ctx.arc(0,0,8,0,Math.PI*2); ctx.fill(); ctx.stroke();
+      for (let i = 0; i < 3; i++) {
+        const a = Math.PI*2/3*i;
+        ctx.beginPath(); ctx.arc(Math.cos(a)*12, Math.sin(a)*12, 5, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+      }
+    } else if (id===10) {
+      // OVERLOAD — double square
+      ctx.fillRect(-13,-13,26,26); ctx.strokeRect(-13,-13,26,26);
+      ctx.save();
+      ctx.rotate(Math.PI/4);
+      ctx.strokeStyle = this.tmpl.color + '88'; ctx.lineWidth=1;
+      ctx.strokeRect(-10,-10,20,20);
+      ctx.restore();
+    } else if (id===11) {
+      // MIRROR — diamond
+      ctx.beginPath(); ctx.moveTo(0,-14); ctx.lineTo(14,0); ctx.lineTo(0,14); ctx.lineTo(-14,0); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = this.tmpl.color + '66';
+      ctx.beginPath(); ctx.moveTo(-10,0); ctx.lineTo(10,0); ctx.stroke();
+    } else if (id===12) {
+      // OMEGA — star
+      for (let i = 0; i < 8; i++) {
+        const a = Math.PI/4*i + gameState.frame*0.01;
+        const r = i%2===0 ? 15 : 7;
+        ctx[i===0?'moveTo':'lineTo'](Math.cos(a)*r, Math.sin(a)*r);
+      }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
     }
   }
 }
 
 // ──────────────────────────────────────────────
-//  PROJECTILE CLASS
+//  PROJECTILE CLASSES
 // ──────────────────────────────────────────────
 class Projectile {
   constructor(x, y, tgt, src) {
@@ -606,9 +815,13 @@ class Projectile {
         gameState.screenShake = 6;
       } else if (this.src.tmpl.id === 5) {
         this.tgt.hp -= this.src.getDamage(); // PHANTOM ignores shield and ghost
+      } else if (this.src.tmpl.special === 'virus') {
+        this.tgt.takeDamage(this.src.getDamage());
+        // Re-apply infection
+        const infectDuration = gameState.stage.biome === 'swamp' ? 220 : 150;
+        this.tgt.infected = infectDuration;
       } else {
         let dmg = this.src.getDamage();
-        // GHOST enemies take only 40% damage from non-PHANTOM
         if (this.tgt.ghosted && this.src.tmpl.id !== 5) dmg *= 0.4;
         this.tgt.takeDamage(dmg);
       }
@@ -627,9 +840,47 @@ class Projectile {
     ctx.fillStyle  = this.src.tmpl.color;
     const sz = this.src.lv >= 3 ? 5 : 3.5;
     ctx.beginPath(); ctx.arc(this.x, this.y, sz, 0, Math.PI*2); ctx.fill();
-    // Trail
     ctx.globalAlpha = 0.4; ctx.beginPath(); ctx.arc(this.x, this.y, sz+2, 0, Math.PI*2); ctx.fill();
     ctx.restore();
+  }
+}
+
+// MIRROR projectile — bounces once to a second target
+class MirrorProjectile extends Projectile {
+  constructor(x, y, tgt, src, pool) {
+    super(x, y, tgt, src);
+    this.bounced = false;
+    this.pool = pool;
+  }
+
+  update() {
+    if (!this.alive || this.tgt.hp <= 0) { this.alive = false; return; }
+    const dx = this.tgt.x - this.x, dy = this.tgt.y - this.y, d = Math.hypot(dx, dy);
+    if (d < this.spd) {
+      let dmg = this.src.getDamage();
+      if (this.tgt.ghosted) dmg *= 0.4;
+      this.tgt.takeDamage(dmg);
+      spawnParticles(this.x, this.y, this.src.tmpl.color, 7);
+
+      if (!this.bounced) {
+        // Find another enemy to bounce to
+        const others = this.pool.filter(e => e !== this.tgt && e.hp > 0);
+        if (others.length > 0) {
+          this.bounced = true;
+          const bounce = others.reduce((closest, e) => {
+            return Math.hypot(e.x-this.x, e.y-this.y) < Math.hypot(closest.x-this.x, closest.y-this.y) ? e : closest;
+          }, others[0]);
+          this.x = this.tgt.x; this.y = this.tgt.y;
+          this.tgt = bounce;
+          spawnParticles(this.x, this.y, '#88eeff', 5);
+          return; // don't kill — let it continue to bounce target
+        }
+      }
+      this.alive = false;
+    } else {
+      this.x += dx / d * this.spd;
+      this.y += dy / d * this.spd;
+    }
   }
 }
 
@@ -676,31 +927,56 @@ function addEffect(e) { effects.push(e); }
 function drawBackground() {
   const stage = gameState.stage;
 
-  // Dark background with subtle noise vignette
   const bgGrad = ctx.createRadialGradient(400, 250, 80, 400, 250, 500);
-  if (stage.biome === 'forest') {
-    bgGrad.addColorStop(0, '#080e0a');
-    bgGrad.addColorStop(1, '#030806');
-  } else if (stage.biome === 'desert') {
-    bgGrad.addColorStop(0, '#0e0a04');
-    bgGrad.addColorStop(1, '#070500');
-  } else {
-    bgGrad.addColorStop(0, '#060814');
-    bgGrad.addColorStop(1, '#020408');
-  }
+  const bgMap = {
+    forest: ['#080e0a','#030806'],
+    desert: ['#0e0a04','#070500'],
+    cyber:  ['#060814','#020408'],
+    void:   ['#080010','#020008'],
+    swamp:  ['#060c02','#020600'],
+    storm:  ['#0e0e04','#060600'],
+  };
+  const [bg0, bg1] = bgMap[stage.biome] || bgMap.cyber;
+  bgGrad.addColorStop(0, bg0);
+  bgGrad.addColorStop(1, bg1);
   ctx.fillStyle = bgGrad;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // Grid — MUCH more visible
-  const gc = stage.biome === 'forest' ? 'rgba(0,200,80,0.12)' :
-             stage.biome === 'desert' ? 'rgba(220,140,0,0.12)' :
-                                        'rgba(0,200,255,0.12)';
+  // Biome ambient particles (void: floating purple dots, storm: flickering yellow lines)
+  if (stage.biome === 'void' && gameState.frame % 3 === 0) {
+    ctx.save();
+    ctx.fillStyle = '#cc44ff';
+    ctx.globalAlpha = 0.15 + Math.random() * 0.1;
+    ctx.shadowBlur = 10; ctx.shadowColor = '#cc44ff';
+    const vx = Math.random() * canvas.width, vy = Math.random() * canvas.height;
+    ctx.fillRect(vx, vy, 2, 2);
+    ctx.restore();
+  }
+  if (stage.biome === 'storm' && gameState.frame % 60 === 0) {
+    // Lightning flash
+    ctx.save();
+    ctx.strokeStyle = '#ffffaa';
+    ctx.globalAlpha = 0.25;
+    ctx.lineWidth = 1;
+    const lx = Math.random() * canvas.width;
+    ctx.beginPath(); ctx.moveTo(lx, 0); ctx.lineTo(lx + (Math.random()-0.5)*60, canvas.height); ctx.stroke();
+    ctx.restore();
+  }
+
+  const gcMap = {
+    forest: 'rgba(0,200,80,0.12)',
+    desert: 'rgba(220,140,0,0.12)',
+    cyber:  'rgba(0,200,255,0.12)',
+    void:   'rgba(180,0,255,0.12)',
+    swamp:  'rgba(80,200,0,0.12)',
+    storm:  'rgba(255,255,0,0.12)',
+  };
+  const gc = gcMap[stage.biome] || gcMap.cyber;
   ctx.strokeStyle = gc;
   ctx.lineWidth   = 0.7;
   for (let i = 0; i <= canvas.width;  i += GS) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke(); }
   for (let i = 0; i <= canvas.height; i += GS) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(canvas.width, i); ctx.stroke(); }
 
-  // Grid dot intersections
   ctx.fillStyle = gc.replace('0.12', '0.25');
   for (let i = 0; i <= canvas.width;  i += GS) {
     for (let j = 0; j <= canvas.height; j += GS) {
@@ -708,7 +984,6 @@ function drawBackground() {
     }
   }
 
-  // Build-blocked cells (path highlight)
   pathCells.forEach(key => {
     const [c, r] = key.split(',').map(Number);
     ctx.fillStyle = 'rgba(255,40,80,0.04)';
@@ -723,19 +998,16 @@ function drawBackground() {
   for (let i = 1; i < battlePath.length; i++) ctx.lineTo(battlePath[i].x, battlePath[i].y);
   ctx.stroke();
 
-  // Path border glow
   ctx.strokeStyle = stage.color;
   ctx.lineWidth   = 3;
   ctx.shadowBlur  = 18; ctx.shadowColor = stage.color;
   ctx.globalAlpha = 0.7;
   ctx.stroke();
 
-  // Inner dim lane line
   ctx.strokeStyle = 'rgba(255,255,255,0.06)';
   ctx.lineWidth = 1; ctx.shadowBlur = 0; ctx.globalAlpha = 1;
   ctx.stroke();
 
-  // Animated dashes on path
   ctx.setLineDash([10, 20]);
   ctx.lineDashOffset = -(gameState.frame * 1.0 % 30);
   ctx.strokeStyle = 'rgba(255,255,255,0.1)'; ctx.lineWidth = 2;
@@ -743,7 +1015,6 @@ function drawBackground() {
   ctx.setLineDash([]);
   ctx.restore();
 
-  // Path arrow indicators every 80px
   drawPathArrows(stage.color);
 }
 
@@ -823,7 +1094,6 @@ function drawPreview() {
 function gameLoop() {
   if (!gameState || gameState.state !== 'playing') return;
 
-  // Screen shake
   let sx = 0, sy = 0;
   if (gameState.screenShake > 0) {
     sx = (Math.random() - 0.5) * gameState.screenShake;
@@ -836,7 +1106,6 @@ function gameLoop() {
   ctx.save();
   ctx.translate(sx, sy);
 
-  // Background + Grid + Path
   drawBackground();
 
   // Spawn enemies
@@ -845,7 +1114,6 @@ function gameLoop() {
   const spawnWindow = 500 + gameState.wave * 30;
   if (gameState.waveTimer < spawnWindow && gameState.waveTimer % spawnInterval === 0) {
     gameState.enemies.push(new Enemy(gameState.wave, false));
-    // Double-spawn on harder waves
     if (gameState.wave >= 5 && Math.random() < 0.35)
       gameState.enemies.push(new Enemy(gameState.wave, false));
   }
@@ -868,9 +1136,10 @@ function gameLoop() {
       updateGameUI();
     } else if (gameState.state === 'playing') {
       gameState.state = 'clear';
-      playerData.crystals += 300;
+      const reward = 300 + (gameState.stage.id >= 3 ? 150 : 0);
+      playerData.crystals += reward;
       if (typeof autoSave === 'function') autoSave('mission-clear');
-      showModal("MISSION COMPLETE", "セクターコアの完全防衛に成功。報酬: 300コア結晶", "var(--green)");
+      showModal("MISSION COMPLETE", `セクターコアの完全防衛に成功。報酬: ${reward}コア結晶`, "var(--green)");
       updateMeta();
     }
   }
@@ -886,6 +1155,17 @@ function gameLoop() {
   });
   gameState.railBeams = gameState.railBeams.filter(b => b.t > 0);
 
+  // OMEGA beams
+  if (!gameState.omegaBeams) gameState.omegaBeams = [];
+  gameState.omegaBeams.forEach(b => {
+    ctx.save(); ctx.globalAlpha = b.t / 14;
+    ctx.strokeStyle = '#ff2200'; ctx.lineWidth = 2;
+    ctx.shadowBlur = 20; ctx.shadowColor = '#ff4400';
+    ctx.beginPath(); ctx.moveTo(b.x1, b.y1); ctx.lineTo(b.x2, b.y2); ctx.stroke();
+    ctx.restore(); b.t--;
+  });
+  gameState.omegaBeams = gameState.omegaBeams.filter(b => b.t > 0);
+
   // Towers
   gameState.towers.forEach(t => { t.update(); t.draw(); });
 
@@ -895,6 +1175,7 @@ function gameLoop() {
   gameState.projectiles = gameState.projectiles.filter(p => p.alive);
 
   // Enemies
+  const toSpawn = [];
   gameState.enemies.forEach(e => { e.update(); e.draw(); });
   gameState.enemies = gameState.enemies.filter(e => {
     if (e.hp <= 0 && e.pathIdx < battlePath.length - 1) {
@@ -902,11 +1183,27 @@ function gameLoop() {
       spawnParticles(e.x, e.y, e.color, e.isBoss ? 80 : 18);
       gameState.floatingTexts.push(new FloatText(e.x, e.y, `+${e.reward}C`, '#ffd700'));
       if (e.isBoss) gameState.screenShake = 25;
+
+      // SPLITTER — spawns 2 SWARM enemies on death
+      if (e.splits) {
+        for (let k = 0; k < 2; k++) {
+          const s = new Enemy(gameState.wave, false);
+          s.type = 'SWARM'; s.color = '#44ff99'; s.sz = 9;
+          s.spd = 2.5; s.maxHp = e.maxHp * 0.25; s.hp = s.maxHp;
+          s.reward = 5; s.splits = false;
+          s.x = e.x + (Math.random()-0.5)*20; s.y = e.y + (Math.random()-0.5)*20;
+          s.pathIdx = Math.max(0, e.pathIdx);
+          toSpawn.push(s);
+        }
+        gameState.floatingTexts.push(new FloatText(e.x, e.y, 'SPLIT!', '#ff6688'));
+      }
+
       updateGameUI();
       return false;
     }
     return e.hp > 0;
   });
+  toSpawn.forEach(s => gameState.enemies.push(s));
 
   // Special effects
   effects.forEach(ef => {
@@ -928,6 +1225,18 @@ function gameLoop() {
       ctx.fill(); ctx.stroke();
       ctx.strokeStyle = '#ffaa00'; ctx.lineWidth = 1; ctx.globalAlpha = p * 0.5;
       ctx.beginPath(); ctx.arc(ef.x, ef.y, ef.r * (1.3 - p * 0.3), 0, Math.PI*2); ctx.stroke();
+    } else if (ef.type === 'vortex') {
+      // Spinning vortex effect
+      ctx.strokeStyle = '#aa55ff'; ctx.shadowColor = '#aa55ff'; ctx.lineWidth = 1.5;
+      ctx.globalAlpha = ef.t / 12 * 0.7;
+      ctx.save();
+      ctx.translate(ef.x, ef.y);
+      ctx.rotate(gameState.frame * 0.12);
+      for (let ri = 1; ri <= 3; ri++) {
+        ctx.beginPath(); ctx.arc(0, 0, ef.r * ri / 3, 0, Math.PI * 1.5);
+        ctx.stroke();
+      }
+      ctx.restore();
     }
     ctx.globalAlpha = 1; ctx.restore(); ef.t--;
   });
