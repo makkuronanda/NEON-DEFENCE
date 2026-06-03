@@ -51,6 +51,15 @@
         const app = document.getElementById('app');
         app.style.display = 'flex';
         app.style.flexDirection = 'column';
+
+        // ── ローカルセーブを起動時に適用 ──────────────────────
+        // Googleログイン前の状態でも前回のゲストデータを復元する。
+        // ログイン後は onAuthChanged → loadFromCloud が呼ばれ、
+        // クラウドとの照合・マージが行われるためここは上書きされる場合がある。
+        if (typeof window.applyLocalSaveOnBoot === 'function') {
+          window.applyLocalSaveOnBoot();
+        }
+
         initTitle();
         updateMeta();
       }, 400);
