@@ -268,10 +268,17 @@ function closeGachaOverlay() {
 }
 
 // ════════════════════════════════════════════════════════════
-//  GOOGLE AUTH & CLOUD SAVE
+//  SAVE / LOAD  ─  LOCAL  +  CLOUD
+//
+//  [ゲスト]   autoSave → localStorage のみ
+//  [ログイン] autoSave → localStorage + Firestore
+//  [ログイン時] loadFromCloud が呼ばれ、
+//              ゲストデータとクラウドデータを比較・選択
 // ════════════════════════════════════════════════════════════
 
-// ── Toast helper ────────────────────────────────────────────
+const LOCAL_SAVE_KEY = 'neonDefenseSave';
+
+// ── Toast ─────────────────────────────────────────────────────
 function showToast(msg, isError = false) {
   let t = document.getElementById('save-toast');
   if (!t) {
@@ -286,7 +293,220 @@ function showToast(msg, isError = false) {
   t._tid = setTimeout(() => t.classList.remove('show'), 2800);
 }
 
-// ── Auth state callback (called by Firebase module) ─────────
+// ── Serialize ────────────────────────────────────────────────
+function serializePlayerData() {
+  return {
+    crystals:   playerData.crystals,
+    baseLevels: [...playerData.baseLevels],
+    unlocked:   [...playerData.unlocked],
+    party:      [...playerData.party],
+    savedAt:    new Date().toISOString()
+  };
+}
+
+// ── Apply saved snapshot → playerData ────────────────────────
+function applyCloudData(data) {
+  if (!data) return;
+  if (typeof data.crystals === 'number')  playerData.crystals   = data.crystals;
+  if (Array.isArray(data.baseLevels)) {
+    playerData.baseLevels = [...data.baseLevels];
+    // 新キャラ追加後のセーブデータへ対応
+    while (playerData.baseLevels.length < CHAR_TEMPLATES.length)
+      playerData.baseLevels.push(1);
+  }
+  if (Array.isArray(data.unlocked)) playerData.unlocked = [...data.unlocked];
+  if (Array.isArray(data.party))    playerData.party    = [...data.party];
+  updateMeta();
+  const activeId = document.querySelector('.screen.active')?.id;
+  if (activeId === 'screen-party') renderParty();
+}
+
+// ── ローカル保存（全員共通）──────────────────────────────────
+function saveLocal() {
+  try {
+    localStorage.setItem(LOCAL_SAVE_KEY, JSON.stringify(serializePlayerData()));
+  } catch(e) { console.warn('[LocalSave] 失敗:', e); }
+}
+
+// ── ローカルデータ取得 ───────────────────────────────────────
+function getLocalData() {
+  try {
+    const raw = localStorage.getItem(LOCAL_SAVE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch(_) { return null; }
+}
+
+// ── ゲストプレイの痕跡があるか ───────────────────────────────
+// 初期値と同じなら「何もしていない」とみなしてダイアログを出さない
+function hasGuestProgress(data) {
+  if (!data) return false;
+  if (data.crystals !== 600)                                   return true;
+  if ((data.unlocked?.length  ?? 0) > 2)                      return true;
+  if ((data.baseLevels ?? []).some((lv, i) => i > 1 && lv > 1)) return true;
+  return false;
+}
+
+// ── 起動時にローカルデータを適用（loader.js から呼び出す）────
+window.applyLocalSaveOnBoot = function() {
+  const local = getLocalData();
+  if (local) applyCloudData(local);
+};
+
+// ════════════════════════════════════════════════════════════
+//  DATA MIGRATION DIALOG
+// ════════════════════════════════════════════════════════════
+function showMigrateDialog(uid, localData, cloudData) {
+  return new Promise(resolve => {
+    document.getElementById('_migrate-dialog')?.remove();
+
+    const fmtDate = iso => {
+      if (!iso) return '不明';
+      const d = new Date(iso);
+      return `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`;
+    };
+
+    const wrap = document.createElement('div');
+    wrap.id = '_migrate-dialog';
+    wrap.style.cssText = `
+      position:fixed;inset:0;z-index:99999;
+      display:flex;align-items:center;justify-content:center;
+      background:rgba(0,0,10,0.92);
+      backdrop-filter:blur(10px);
+    `;
+
+    wrap.innerHTML = `
+      <style>
+        #_migrate-dialog .mg-panel {
+          background:linear-gradient(135deg,rgba(4,6,20,0.99),rgba(8,4,24,0.99));
+          border:1px solid #cc44ff;
+          box-shadow:0 0 60px #cc44ff33,inset 0 0 40px rgba(204,68,255,0.03);
+          padding:38px 32px 30px;
+          max-width:500px;width:92%;
+          font-family:var(--font-sub,'Share Tech Mono',monospace);
+          color:#aab;position:relative;
+        }
+        #_migrate-dialog .mg-corner {
+          position:absolute;width:12px;height:12px;border-color:#cc44ff;border-style:solid;
+        }
+        #_migrate-dialog .mg-corner.tl{top:10px;left:10px;border-width:1px 0 0 1px;}
+        #_migrate-dialog .mg-corner.tr{top:10px;right:10px;border-width:1px 1px 0 0;}
+        #_migrate-dialog .mg-corner.bl{bottom:10px;left:10px;border-width:0 0 1px 1px;}
+        #_migrate-dialog .mg-corner.br{bottom:10px;right:10px;border-width:0 1px 1px 0;}
+        #_migrate-dialog .mg-title {
+          font-family:var(--font-main,'Orbitron',sans-serif);
+          font-size:0.88rem;letter-spacing:4px;color:#cc44ff;margin-bottom:4px;
+        }
+        #_migrate-dialog .mg-sub {
+          font-size:0.62rem;letter-spacing:1px;color:#445;
+          line-height:1.7;margin-bottom:24px;
+        }
+        #_migrate-dialog .mg-cards {
+          display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px;
+        }
+        #_migrate-dialog .mg-card {
+          padding:16px 14px;border-radius:2px;
+        }
+        #_migrate-dialog .mg-card-cloud { border:1px solid #cc44ff55;background:rgba(204,68,255,0.05); }
+        #_migrate-dialog .mg-card-local { border:1px solid #00e8ff55;background:rgba(0,232,255,0.05); }
+        #_migrate-dialog .mg-card-lbl {
+          font-size:0.52rem;letter-spacing:3px;margin-bottom:10px;font-family:var(--font-main,'Orbitron',sans-serif);
+        }
+        #_migrate-dialog .mg-row { font-size:0.65rem;color:#667;line-height:2.1; }
+        #_migrate-dialog .mg-row b { color:#ffd700;font-weight:normal; }
+        #_migrate-dialog .mg-row-date { font-size:0.53rem;color:#334;margin-top:6px; }
+        #_migrate-dialog .mg-btn {
+          width:100%;font-family:var(--font-main,'Orbitron',sans-serif);
+          font-size:0.62rem;letter-spacing:2px;padding:14px 10px;
+          cursor:pointer;transition:all .18s;border-radius:1px;
+          margin-bottom:10px;
+        }
+        #_migrate-dialog .mg-btn:last-of-type { margin-bottom:0; }
+        #_migrate-dialog .mg-btn:hover { transform:translateY(-2px);filter:brightness(1.25); }
+        #_migrate-dialog .mg-btn-local {
+          border:1px solid #00e8ff;background:rgba(0,232,255,0.07);color:#00e8ff;
+        }
+        #_migrate-dialog .mg-btn-cloud {
+          border:1px solid #cc44ff;background:rgba(204,68,255,0.07);color:#cc44ff;
+        }
+        #_migrate-dialog .mg-note {
+          font-size:0.55rem;color:#334;text-align:center;
+          margin-top:14px;line-height:1.8;
+        }
+      </style>
+
+      <div class="mg-panel">
+        <div class="mg-corner tl"></div><div class="mg-corner tr"></div>
+        <div class="mg-corner bl"></div><div class="mg-corner br"></div>
+
+        <div class="mg-title">◈ DATA SYNC CONFLICT</div>
+        <div class="mg-sub">
+          クラウドに既存のデータが見つかりました。<br>
+          ゲストプレイ中のローカルデータと、どちらを使用しますか？
+        </div>
+
+        <div class="mg-cards">
+          <div class="mg-card mg-card-cloud">
+            <div class="mg-card-lbl" style="color:#cc44ff;">☁ CLOUD DATA</div>
+            <div class="mg-row">CRYSTA  <b>${cloudData?.crystals ?? '—'}</b></div>
+            <div class="mg-row">UNITS   <b>${cloudData?.unlocked?.length ?? '—'}</b></div>
+            <div class="mg-row-date">${fmtDate(cloudData?.savedAt)}</div>
+          </div>
+          <div class="mg-card mg-card-local">
+            <div class="mg-card-lbl" style="color:#00e8ff;">◉ LOCAL DATA</div>
+            <div class="mg-row">CRYSTA  <b>${localData?.crystals ?? '—'}</b></div>
+            <div class="mg-row">UNITS   <b>${localData?.unlocked?.length ?? '—'}</b></div>
+            <div class="mg-row-date">${fmtDate(localData?.savedAt)}</div>
+          </div>
+        </div>
+
+        <button class="mg-btn mg-btn-local" id="_mg-btn-local">
+          ▶ ローカルデータをクラウドに移して使う
+        </button>
+        <button class="mg-btn mg-btn-cloud" id="_mg-btn-cloud">
+          ▶ クラウドデータを使う（ローカルを破棄）
+        </button>
+
+        <div class="mg-note">
+          「ローカルを使う」を選ぶとクラウドの既存データは上書きされます。<br>
+          「クラウドを使う」を選ぶとローカルデータは消去されます。
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(wrap);
+
+    // ── ローカルを選択：クラウドへ移行して適用 ──────────────
+    document.getElementById('_mg-btn-local').onclick = async () => {
+      wrap.remove();
+      try {
+        const payload = { ...localData, savedAt: new Date().toISOString() };
+        await window._saveData(uid, payload);
+        applyCloudData(payload);
+        saveLocal();
+        showToast('ローカルデータをクラウドに移行しました ✓');
+      } catch(e) {
+        showToast('移行に失敗しました: ' + e.message, true);
+        applyCloudData(localData); // 失敗してもローカルは活かす
+      }
+      resolve('local');
+    };
+
+    // ── クラウドを選択：ローカルを上書き ────────────────────
+    document.getElementById('_mg-btn-cloud').onclick = () => {
+      wrap.remove();
+      applyCloudData(cloudData);
+      saveLocal(); // クラウドデータをローカルにも書き込む
+      showToast('クラウドデータを読み込みました');
+      resolve('cloud');
+    };
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+//  GOOGLE AUTH & CLOUD SAVE
+// ════════════════════════════════════════════════════════════
+
+// ── Auth state callback（Firebase module から呼ばれる）──────
 window.onAuthChanged = function(user) {
   const btn      = document.getElementById('auth-btn');
   const saveWrap = document.getElementById('auth-save-wrap');
@@ -295,22 +515,22 @@ window.onAuthChanged = function(user) {
   const userName = document.getElementById('auth-user-name');
 
   if (user) {
-    // Logged in
     btn.classList.add('logged-in');
     btnIcon.textContent  = '✕';
     btnLabel.textContent = 'LOGOUT';
     saveWrap.style.display = 'flex';
     userName.textContent   = user.displayName || user.email || 'USER';
 
-    // Auto-load cloud data on login
+    // ログイン時：ローカル vs クラウドを照合
     loadFromCloud(user.uid);
+    startAutoSaveInterval();
   } else {
-    // Logged out
     btn.classList.remove('logged-in');
     btnIcon.textContent  = '⬡';
     btnLabel.textContent = 'GOOGLE LOGIN';
     saveWrap.style.display = 'none';
     userName.textContent   = '';
+    stopAutoSaveInterval();
   }
 };
 
@@ -327,36 +547,7 @@ window.handleAuthBtn = function() {
   }
 };
 
-// ── Serialize player data ────────────────────────────────────
-function serializePlayerData() {
-  return {
-    crystals:    playerData.crystals,
-    baseLevels:  [...playerData.baseLevels],
-    unlocked:    [...playerData.unlocked],
-    party:       [...playerData.party],
-    savedAt:     new Date().toISOString()
-  };
-}
-
-// ── Deserialize & apply ──────────────────────────────────────
-function applyCloudData(data) {
-  if (!data) return;
-  if (typeof data.crystals   === 'number') playerData.crystals   = data.crystals;
-  if (Array.isArray(data.baseLevels)) {
-    // Extend baseLevels if new characters were added after save
-    playerData.baseLevels = data.baseLevels;
-    while (playerData.baseLevels.length < CHAR_TEMPLATES.length)
-      playerData.baseLevels.push(1);
-  }
-  if (Array.isArray(data.unlocked))        playerData.unlocked   = data.unlocked;
-  if (Array.isArray(data.party))           playerData.party      = data.party;
-  updateMeta();
-  // Refresh visible screen
-  const activeScreen = document.querySelector('.screen.active')?.id;
-  if (activeScreen === 'screen-party') renderParty();
-}
-
-// ── Save to Firestore ────────────────────────────────────────
+// ── 手動 Save ─────────────────────────────────────────────────
 window.saveToCloud = async function() {
   const user = window._currentUser;
   if (!user) { showToast('ログインが必要です', true); return; }
@@ -368,6 +559,7 @@ window.saveToCloud = async function() {
 
   try {
     await window._saveData(user.uid, serializePlayerData());
+    saveLocal();
     btn.classList.remove('saving');
     btn.classList.add('saved');
     btn.textContent = '✓ SAVED';
@@ -383,10 +575,16 @@ window.saveToCloud = async function() {
   }
 };
 
-// ── Auto-save ───────────────────────────────────────────────────────────
+// ── Auto-save ─────────────────────────────────────────────────
+// ① 常にローカルへ保存（ゲスト・ログイン問わず）
+// ② ログイン中ならクラウドにも保存
 let _autoSaveTimer = null;
 
 async function autoSave(reason) {
+  // ① ローカル保存（常時）
+  saveLocal();
+
+  // ② クラウド保存（ログイン時のみ）
   const user = window._currentUser;
   if (!user || typeof window._saveData !== 'function') return;
   try {
@@ -395,7 +593,7 @@ async function autoSave(reason) {
     const btn = document.getElementById('save-btn');
     if (btn) {
       btn.classList.add('saved');
-      btn.textContent = '\u2713 AUTO';
+      btn.textContent = '✓ AUTO';
       clearTimeout(btn._autoTid);
       btn._autoTid = setTimeout(() => {
         btn.classList.remove('saved');
@@ -403,7 +601,7 @@ async function autoSave(reason) {
       }, 1500);
     }
   } catch(e) {
-    showToast('\u81ea\u52d5\u4fdd\u5b58\u306b\u5931\u6557: ' + e.message, true);
+    showToast('自動保存に失敗: ' + e.message, true);
   }
 }
 
@@ -415,34 +613,51 @@ function stopAutoSaveInterval() {
   clearInterval(_autoSaveTimer);
 }
 
-const _origOnAuthChanged = window.onAuthChanged;
-window.onAuthChanged = function(user) {
-  if (_origOnAuthChanged) _origOnAuthChanged(user);
-  if (user) startAutoSaveInterval();
-  else      stopAutoSaveInterval();
-};
-
+// ページを離れる / タブを隠す際にも保存
 window.addEventListener('beforeunload', () => {
+  saveLocal(); // ゲスト含む全員
   if (!window._currentUser || typeof window._saveData !== 'function') return;
   try { window._saveData(window._currentUser.uid, serializePlayerData()); } catch(_) {}
 });
+
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') autoSave('tab-hidden');
 });
 
-
-// ── Load from Firestore ──────────────────────────────────────
+// ── Load from Firestore（ログイン直後に呼ばれる）────────────
 async function loadFromCloud(uid) {
   if (typeof window._loadData !== 'function') return;
   try {
-    const data = await window._loadData(uid);
-    if (data) {
-      applyCloudData(data);
-      const d = new Date(data.savedAt);
+    const cloudData = await window._loadData(uid);
+    const localData = getLocalData();
+    const guestHasProgress = hasGuestProgress(localData);
+
+    // ── Case A: クラウドにデータなし ──────────────────────
+    if (!cloudData) {
+      if (guestHasProgress) {
+        // ゲストデータを自動でクラウドへ移行（確認不要）
+        const payload = { ...localData, savedAt: new Date().toISOString() };
+        await window._saveData(uid, payload);
+        applyCloudData(payload);
+        saveLocal();
+        showToast('ゲストデータをクラウドに移行しました ✓');
+      } else {
+        showToast('クラウドデータなし — 現在のデータで開始します');
+      }
+      return;
+    }
+
+    // ── Case B: クラウドにデータあり ──────────────────────
+    if (guestHasProgress) {
+      // ゲストプレイのデータがある → ダイアログで選ばせる
+      await showMigrateDialog(uid, localData, cloudData);
+    } else {
+      // ゲストプレイなし → クラウドをそのまま適用
+      applyCloudData(cloudData);
+      saveLocal();
+      const d = new Date(cloudData.savedAt);
       const dateStr = `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`;
       showToast(`データをロードしました (${dateStr})`);
-    } else {
-      showToast('クラウドデータなし — 新規データで開始します');
     }
   } catch(e) {
     showToast('ロード失敗: ' + e.message, true);
