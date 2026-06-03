@@ -58,18 +58,24 @@ function renderStages() {
   c.innerHTML = '';
   STAGE_TEMPLATES.forEach(s => {
     const diffColor = s.diff === 'NORMAL' ? 'var(--green)' : s.diff === 'HARD' ? 'var(--orange)' : 'var(--red)';
+    const isNew = s.id >= 3;
     const card = document.createElement('div');
     card.className = 'stage-card';
     card.innerHTML = `
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
         <div class="stage-name" style="color:${s.color};text-shadow:0 0 8px ${s.color}44;">${s.name}</div>
-        <span style="font-family:var(--font-main);font-size:0.55rem;letter-spacing:2px;padding:2px 8px;border:1px solid ${diffColor};color:${diffColor};">${s.diff}</span>
+        <div style="display:flex;gap:6px;align-items:center;">
+          ${isNew ? '<span style="font-family:var(--font-main);font-size:0.5rem;letter-spacing:2px;padding:1px 6px;border:1px solid #ffd700;color:#ffd700;animation:pulse-glow 1.5s infinite;">NEW</span>' : ''}
+          <span style="font-family:var(--font-main);font-size:0.55rem;letter-spacing:2px;padding:2px 8px;border:1px solid ${diffColor};color:${diffColor};">${s.diff}</span>
+        </div>
       </div>
+      ${s.desc ? `<div style="font-size:0.62rem;color:#557;margin-bottom:8px;line-height:1.5;">${s.desc}</div>` : ''}
       <div class="stage-gimmick">▸ ${s.gimmick}</div>
-      <div style="display:flex;gap:8px;align-items:center;">
+      <div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap;">
         <span class="stage-badge" style="border:1px solid #2a3050;color:#668;">${s.waves} WAVES</span>
         <span class="stage-badge" style="border:1px solid #2a3050;color:#668;">START: ${s.startMoney||150}C / ${s.startHp||20}HP</span>
         <span class="stage-badge" style="border:1px solid #2a3050;color:#668;">BOSS OVERDRIVE</span>
+        <span class="stage-badge" style="border:1px solid ${s.color}44;color:${s.color}88;">PATH-${(s.pathId||0)+1}</span>
       </div>
     `;
     card.addEventListener('mouseenter', () => {
@@ -177,8 +183,8 @@ function rollGacha(count) {
   for (let i = 0; i < count; i++) {
     const roll = Math.random();
     let pool;
-    if (roll < 0.05)      pool = CHAR_TEMPLATES.filter(c => c.rarity === 'SSR');
-    else if (roll < 0.25) pool = CHAR_TEMPLATES.filter(c => c.rarity === 'SR');
+    if (roll < 0.03)      pool = CHAR_TEMPLATES.filter(c => c.rarity === 'SSR');
+    else if (roll < 0.21) pool = CHAR_TEMPLATES.filter(c => c.rarity === 'SR');
     else                  pool = CHAR_TEMPLATES.filter(c => c.rarity === 'R');
     const ch = pool[Math.floor(Math.random() * pool.length)];
     const isNew = !playerData.unlocked.includes(ch.id);
@@ -336,7 +342,12 @@ function serializePlayerData() {
 function applyCloudData(data) {
   if (!data) return;
   if (typeof data.crystals   === 'number') playerData.crystals   = data.crystals;
-  if (Array.isArray(data.baseLevels))      playerData.baseLevels = data.baseLevels;
+  if (Array.isArray(data.baseLevels)) {
+    // Extend baseLevels if new characters were added after save
+    playerData.baseLevels = data.baseLevels;
+    while (playerData.baseLevels.length < CHAR_TEMPLATES.length)
+      playerData.baseLevels.push(1);
+  }
   if (Array.isArray(data.unlocked))        playerData.unlocked   = data.unlocked;
   if (Array.isArray(data.party))           playerData.party      = data.party;
   updateMeta();
