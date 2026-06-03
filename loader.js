@@ -8,7 +8,7 @@
   for (let i = 0; i < 60; i++) {
     const p = document.createElement('div');
     p.className = 'lp';
-    const colors = ['#00f5ff','#cc44ff','#ff00aa','#ffd700','#00ff88'];
+    const colors = ['#00f5ff','#cc44ff','#ff00aa','#ffd700','#00ff88','#aa55ff','#55ff44'];
     p.style.cssText = `
       left: ${Math.random() * 100}%;
       bottom: ${Math.random() * 20}%;
@@ -23,16 +23,18 @@
 
   // ── Progress simulation ──
   const STEPS = [
-    { pct: 8,  label: "CORE CRYSTAL MATRICES ONLINE...",     delay: 300 },
-    { pct: 18, label: "LOADING UNIT ARCHIVES...",             delay: 280 },
-    { pct: 30, label: "CALIBRATING DEFENSE GRID...",          delay: 320 },
-    { pct: 42, label: "SYNCING BATTLE TOPOLOGIES...",         delay: 350 },
-    { pct: 55, label: "DECRYPTING ENEMY SIGNATURES...",       delay: 280 },
-    { pct: 66, label: "OVERDRIVE SUBSYSTEM ONLINE...",        delay: 300 },
-    { pct: 75, label: "LOADING STAGE SECTOR DATA...",         delay: 250 },
-    { pct: 84, label: "WEAPON TARGETING SYSTEMS READY...",    delay: 260 },
-    { pct: 92, label: "GACHA RECRUIT POOL INITIALIZED...",    delay: 300 },
-    { pct: 100, label: "ALL SYSTEMS OPERATIONAL.",            delay: 200 },
+    { pct: 6,  label: "CORE CRYSTAL MATRICES ONLINE...",        delay: 280 },
+    { pct: 14, label: "LOADING UNIT ARCHIVES [13 UNITS]...",    delay: 260 },
+    { pct: 24, label: "CALIBRATING DEFENSE GRID...",            delay: 300 },
+    { pct: 34, label: "SYNCING BATTLE TOPOLOGIES [4 PATHS]...", delay: 320 },
+    { pct: 44, label: "DECRYPTING ENEMY SIGNATURES...",         delay: 260 },
+    { pct: 52, label: "OVERDRIVE SUBSYSTEM ONLINE...",          delay: 280 },
+    { pct: 61, label: "LOADING STAGE SECTOR DATA [6 STAGES]...",delay: 260 },
+    { pct: 69, label: "WEAPON TARGETING SYSTEMS READY...",      delay: 240 },
+    { pct: 77, label: "GACHA RECRUIT POOL INITIALIZED...",      delay: 280 },
+    { pct: 84, label: "VORTEX & OMEGA SYSTEMS CALIBRATED...",   delay: 260 },
+    { pct: 91, label: "BIOME HAZARDS ARMED [VOID/STORM]...",    delay: 250 },
+    { pct: 100, label: "ALL SYSTEMS OPERATIONAL. GOOD LUCK.",   delay: 200 },
   ];
 
   const barEl   = document.getElementById('loader-bar');
@@ -41,17 +43,14 @@
   const logEl   = document.getElementById('loader-log');
 
   let stepIdx = 0;
-  let elapsed = 0;
 
   function runStep() {
     if (stepIdx >= STEPS.length) {
-      // Done – fade out loader, show app
       setTimeout(() => {
         document.getElementById('loader-screen').classList.add('fade-out');
         const app = document.getElementById('app');
         app.style.display = 'flex';
         app.style.flexDirection = 'column';
-        // init hex particles in title screen now
         initTitle();
         updateMeta();
       }, 400);
@@ -63,7 +62,6 @@
     pctEl.textContent = step.pct + '%';
     labelEl.textContent = step.label;
 
-    // Add to log (keep last 3)
     const line = document.createElement('div');
     line.className = 'loader-log-line';
     line.textContent = '> ' + step.label;
@@ -71,10 +69,8 @@
     if (logEl.children.length > 3) logEl.removeChild(logEl.firstChild);
 
     stepIdx++;
-    elapsed += step.delay;
     setTimeout(runStep, step.delay);
   }
 
-  // Start after a small initial pause
   setTimeout(runStep, 500);
 })();
