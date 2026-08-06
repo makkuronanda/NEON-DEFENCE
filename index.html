@@ -122,6 +122,7 @@
     <button class="tab-btn active" onclick="switchScreen('title')">TOP</button>
     <button class="tab-btn" onclick="switchScreen('stage')">STAGE</button>
     <button class="tab-btn" onclick="switchScreen('party')">PARTY</button>
+    <button class="tab-btn" onclick="switchScreen('augment')">PROTOCOL</button>
     <button class="tab-btn" onclick="switchScreen('gacha')">GACHA</button>
   </div>
   <div class="header-crystal">CORE CRYSTA <span id="meta-currency">0</span></div>
@@ -147,9 +148,9 @@
     <div class="title-logo">NEON DEFENSE</div>
     <div class="title-sub">— OVERDRIVE SYSTEM III —</div>
     <div class="title-stats">
-      <div class="title-stat"><div class="title-stat-num" id="ts-chars">13</div><div class="title-stat-lbl">UNITS</div></div>
-      <div class="title-stat"><div class="title-stat-num">6</div><div class="title-stat-lbl">SECTORS</div></div>
-      <div class="title-stat"><div class="title-stat-num">11</div><div class="title-stat-lbl">MAX WAVES</div></div>
+      <div class="title-stat"><div class="title-stat-num" id="ts-chars">17</div><div class="title-stat-lbl">UNITS</div></div>
+      <div class="title-stat"><div class="title-stat-num">9</div><div class="title-stat-lbl">SECTORS</div></div>
+      <div class="title-stat"><div class="title-stat-num">12</div><div class="title-stat-lbl">MAX WAVES</div></div>
     </div>
     <button class="btn-start btn-start-pulse" onclick="switchScreen('stage')">▶ BOOT SYSTEM</button>
   </div>
@@ -170,7 +171,7 @@
     <div class="screen-title">◈ BATTLE TEAM CONFIGURATION</div>
     <div class="party-layout">
       <div>
-        <div style="font-size:0.65rem;letter-spacing:2px;color:#446;margin-bottom:10px;">ACTIVE SLOTS (MAX 3)</div>
+        <div style="font-size:0.65rem;letter-spacing:2px;color:#446;margin-bottom:10px;" id="party-slots-label">ACTIVE SLOTS (MAX 3)</div>
         <div class="party-slots-row" id="party-slots"></div>
       </div>
       <div class="divider"></div>
@@ -180,9 +181,23 @@
   </div>
 </div>
 
+<!-- AUGMENT (解放プロトコル) -->
+<div id="screen-augment" class="screen">
+  <div class="screen-content">
+    <div class="screen-title">◈ EXPANSION PROTOCOLS — 解放プロトコル</div>
+    <div style="font-size:0.65rem;letter-spacing:1px;color:#557;margin-bottom:16px;line-height:1.6;">
+      コア結晶で恒久的なシステム強化を解放する。一度解放・強化した効果はすべての戦闘で永久に発動する。
+    </div>
+    <div class="augment-grid" id="augment-list"></div>
+  </div>
+</div>
+
 <!-- GACHA -->
 <div id="screen-gacha" class="screen">
   <div class="gacha-scene">
+    <div class="gacha-sound-toggle-wrap">
+      <button class="btn-sound-toggle" id="sound-toggle-btn" onclick="toggleSound()">🔊 SOUND</button>
+    </div>
     <div class="gacha-title">CORE RECRUIT</div>
     <div class="gacha-subtitle">◈ SIGNAL DECRYPTION SYSTEM ◈</div>
     <div class="gacha-portal" onclick="rollGacha(1)">
@@ -204,11 +219,33 @@
 
 <!-- GACHA RESULT OVERLAY -->
 <div id="gacha-overlay">
+  <!-- Phase 1: 解読チャージ演出 -->
+  <div class="gacha-charge" id="gacha-charge">
+    <div class="gacha-charge-core">
+      <div class="gacha-charge-ring r1"></div>
+      <div class="gacha-charge-ring r2"></div>
+      <div class="gacha-charge-ring r3"></div>
+      <div class="gacha-charge-glyph">⬡</div>
+    </div>
+    <div class="gacha-charge-label" id="gacha-charge-label">SIGNAL LOCKED...</div>
+  </div>
+
+  <!-- Phase 2: フラッシュ／衝撃波 -->
   <div class="gacha-flash" id="gacha-flash"></div>
+  <div class="gacha-shockwave" id="gacha-shockwave"></div>
+
+  <!-- Phase 3 (SSR限定): スポットライト演出 -->
+  <div class="gacha-spotlight" id="gacha-spotlight">
+    <div class="gacha-spotlight-card" id="gacha-spotlight-card"></div>
+    <div class="gacha-spotlight-banner" id="gacha-spotlight-banner">OVERDRIVE UNIT DETECTED</div>
+  </div>
+
+  <!-- Phase 4: カード開封 -->
   <div class="gacha-result-bg" id="gacha-result-bg"></div>
   <div class="gacha-stars" id="gacha-stars"></div>
-  <div id="gacha-multi-results" style="display:flex;flex-wrap:wrap;gap:16px;justify-content:center;align-items:center;max-width:900px;position:relative;z-index:1;"></div>
-  <button class="btn-gacha-close" onclick="closeGachaOverlay()">▶ CONTINUE</button>
+  <div id="gacha-multi-results" class="gacha-multi-results"></div>
+  <div class="gacha-tally" id="gacha-tally"></div>
+  <button class="btn-gacha-close" id="gacha-close-btn" onclick="closeGachaOverlay()">▶ CONTINUE</button>
 </div>
 
 <!-- GAME -->
@@ -218,9 +255,16 @@
     <div class="hud-stat"><div class="hud-label">CREDITS</div><div class="hud-val" id="g-money" style="color:var(--green)">0</div></div>
     <div class="hud-stat"><div class="hud-label">WAVE</div><div class="hud-val" id="g-wave" style="color:var(--orange)">1/5</div></div>
     <div style="font-size:0.65rem;letter-spacing:2px;color:var(--cyan)" id="g-gimmick">GIMMICK: —</div>
+    <div class="hud-speed-controls">
+      <button class="btn-speed" id="btn-pause" onclick="togglePause()">⏸ PAUSE</button>
+      <button class="btn-speed" id="btn-speed-1" onclick="setSpeed(1)">1x</button>
+      <button class="btn-speed" id="btn-speed-2" onclick="setSpeed(2)">2x</button>
+      <button class="btn-speed" id="btn-speed-3" onclick="setSpeed(3)">3x</button>
+    </div>
   </div>
   <div class="game-canvas-wrap">
     <canvas id="gameCanvas" width="800" height="500"></canvas>
+    <div id="pause-overlay" class="pause-overlay">⏸ PAUSED</div>
     <div id="game-modal" class="game-overlay">
       <div id="modal-title" style="font-family:var(--font-main);font-size:2rem;font-weight:900;letter-spacing:4px;"></div>
       <div id="modal-desc" style="text-align:center;max-width:500px;color:#aab;font-size:0.85rem;line-height:1.6;"></div>
@@ -229,6 +273,7 @@
   </div>
   <div class="game-controls-bar">
     <div class="build-scroll" id="build-options"></div>
+    <button class="btn-call-wave" id="btn-call-wave" onclick="callNextWave()" disabled>⏩ CALL WAVE</button>
     <div class="inspect-bar" id="inspect-panel"><span style="color:#556;font-size:0.65rem;letter-spacing:1px;">タップしてタワー配置 / タワーをタップで選択</span></div>
   </div>
 </div>
