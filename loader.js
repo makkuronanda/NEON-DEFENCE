@@ -23,17 +23,19 @@
 
   // ── Progress simulation ──
   const STEPS = [
-    { pct: 6,  label: "CORE CRYSTAL MATRICES ONLINE...",        delay: 280 },
-    { pct: 14, label: "LOADING UNIT ARCHIVES [13 UNITS]...",    delay: 260 },
-    { pct: 24, label: "CALIBRATING DEFENSE GRID...",            delay: 300 },
-    { pct: 34, label: "SYNCING BATTLE TOPOLOGIES [4 PATHS]...", delay: 320 },
-    { pct: 44, label: "DECRYPTING ENEMY SIGNATURES...",         delay: 260 },
-    { pct: 52, label: "OVERDRIVE SUBSYSTEM ONLINE...",          delay: 280 },
-    { pct: 61, label: "LOADING STAGE SECTOR DATA [6 STAGES]...",delay: 260 },
-    { pct: 69, label: "WEAPON TARGETING SYSTEMS READY...",      delay: 240 },
-    { pct: 77, label: "GACHA RECRUIT POOL INITIALIZED...",      delay: 280 },
-    { pct: 84, label: "VORTEX & OMEGA SYSTEMS CALIBRATED...",   delay: 260 },
-    { pct: 91, label: "BIOME HAZARDS ARMED [VOID/STORM]...",    delay: 250 },
+    { pct: 5,  label: "CORE CRYSTAL MATRICES ONLINE...",        delay: 260 },
+    { pct: 12, label: "LOADING UNIT ARCHIVES [17 UNITS]...",    delay: 240 },
+    { pct: 20, label: "CALIBRATING DEFENSE GRID...",            delay: 260 },
+    { pct: 28, label: "SYNCING BATTLE TOPOLOGIES [7 PATHS]...", delay: 280 },
+    { pct: 36, label: "DECRYPTING ENEMY SIGNATURES...",         delay: 240 },
+    { pct: 44, label: "OVERDRIVE SUBSYSTEM ONLINE...",          delay: 240 },
+    { pct: 51, label: "LOADING STAGE SECTOR DATA [9 STAGES]...",delay: 260 },
+    { pct: 58, label: "WEAPON TARGETING SYSTEMS READY...",      delay: 220 },
+    { pct: 65, label: "GACHA RECRUIT POOL INITIALIZED...",      delay: 240 },
+    { pct: 72, label: "VORTEX & OMEGA SYSTEMS CALIBRATED...",   delay: 230 },
+    { pct: 79, label: "ARCLIGHT / PULSAR / METEOR ARMED...",    delay: 230 },
+    { pct: 86, label: "BIOME HAZARDS ARMED [VOID/STORM/ICE]...",delay: 240 },
+    { pct: 93, label: "ORBITAL & ZERO POINT SECTORS LINKED...", delay: 230 },
     { pct: 100, label: "ALL SYSTEMS OPERATIONAL. GOOD LUCK.",   delay: 200 },
   ];
 
