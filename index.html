@@ -17,7 +17,6 @@
     from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
   // ── Firebase Config ─────────────────────────────────────
-  // ★ ここに自分のFirebaseプロジェクトの設定を貼り付けてください ★
   const firebaseConfig = {
     apiKey:            "AIzaSyAjSgRjBOO3XYay1YV1C7_velTf67w6ZG0",
     authDomain:        "towergame-c0725.firebaseapp.com",
@@ -32,7 +31,6 @@
   const db   = getFirestore(app);
   const gProvider = new GoogleAuthProvider();
 
-  // ── Expose to global scope ───────────────────────────────
   window._firebaseAuth = auth;
   window._firebaseDb   = db;
   window._googleLogin  = async () => {
@@ -51,7 +49,6 @@
     return snap.exists() ? snap.data() : null;
   };
 
-  // ── Auth state listener ──────────────────────────────────
   onAuthStateChanged(auth, user => {
     window._currentUser = user || null;
     if (typeof window.onAuthChanged === 'function') window.onAuthChanged(user);
@@ -122,6 +119,7 @@
     <button class="tab-btn active" onclick="switchScreen('title')">TOP</button>
     <button class="tab-btn" onclick="switchScreen('stage')">STAGE</button>
     <button class="tab-btn" onclick="switchScreen('party')">PARTY</button>
+    <button class="tab-btn" onclick="switchScreen('archive')">ARCHIVE</button>
     <button class="tab-btn" onclick="switchScreen('augment')">PROTOCOL</button>
     <button class="tab-btn" onclick="switchScreen('gacha')">GACHA</button>
   </div>
@@ -148,13 +146,13 @@
     <div class="title-logo">NEON DEFENSE</div>
     <div class="title-sub">— OVERDRIVE SYSTEM III —</div>
     <div class="title-stats">
-      <div class="title-stat"><div class="title-stat-num" id="ts-chars">17</div><div class="title-stat-lbl">UNITS</div></div>
-      <div class="title-stat"><div class="title-stat-num">9</div><div class="title-stat-lbl">SECTORS</div></div>
-      <div class="title-stat"><div class="title-stat-num">12</div><div class="title-stat-lbl">MAX WAVES</div></div>
+      <div class="title-stat"><div class="title-stat-num" id="ts-chars">23</div><div class="title-stat-lbl">UNITS</div></div>
+      <div class="title-stat"><div class="title-stat-num" id="ts-stages">10</div><div class="title-stat-lbl">SECTORS</div></div>
+      <div class="title-stat"><div class="title-stat-num" id="ts-enemies">18</div><div class="title-stat-lbl">HOSTILES</div></div>
     </div>
     <button class="btn-start btn-start-pulse" onclick="switchScreen('stage')">▶ BOOT SYSTEM</button>
   </div>
-  <div class="title-version">VER. 3.0.0 / BUILD 2025</div>
+  <div class="title-version" id="title-version" onclick="handleVersionTap()">VER. 3.1.0 / BUILD 2026</div>
 </div>
 
 <!-- STAGE -->
@@ -175,9 +173,24 @@
         <div class="party-slots-row" id="party-slots"></div>
       </div>
       <div class="divider"></div>
-      <div style="font-size:0.65rem;letter-spacing:2px;color:#446;margin-bottom:12px;">UNIT ARCHIVE</div>
+      <div style="font-size:0.65rem;letter-spacing:2px;color:#446;margin-bottom:12px;">UNIT ARCHIVE — カードをタップすると回転プレビューを表示</div>
       <div class="char-grid" id="inventory-list"></div>
     </div>
+  </div>
+</div>
+
+<!-- ARCHIVE（敵アーカイブ / 図鑑） -->
+<div id="screen-archive" class="screen">
+  <div class="screen-content">
+    <div class="screen-title">◈ HOSTILE ARCHIVE — 敵アーカイブ</div>
+    <div style="display:flex;gap:14px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+      <div style="font-size:0.65rem;letter-spacing:2px;color:#557;" id="archive-total">TOTAL KILLS: 0</div>
+      <div style="font-size:0.65rem;letter-spacing:2px;color:#cc44ff;" id="archive-progress">ANALYZED: 0/18</div>
+    </div>
+    <div style="font-size:0.62rem;letter-spacing:1px;color:#445;margin-bottom:16px;line-height:1.6;">
+      撃破した敵の解析データがここに蓄積される。未解析の敵は「？」で表示され、初撃破で能力・体力・移動速度が復元される。
+    </div>
+    <div class="archive-grid" id="archive-list"></div>
   </div>
 </div>
 
@@ -219,7 +232,6 @@
 
 <!-- GACHA RESULT OVERLAY -->
 <div id="gacha-overlay">
-  <!-- Phase 1: 解読チャージ演出 -->
   <div class="gacha-charge" id="gacha-charge">
     <div class="gacha-charge-core">
       <div class="gacha-charge-ring r1"></div>
@@ -230,22 +242,45 @@
     <div class="gacha-charge-label" id="gacha-charge-label">SIGNAL LOCKED...</div>
   </div>
 
-  <!-- Phase 2: フラッシュ／衝撃波 -->
   <div class="gacha-flash" id="gacha-flash"></div>
   <div class="gacha-shockwave" id="gacha-shockwave"></div>
 
-  <!-- Phase 3 (SSR限定): スポットライト演出 -->
   <div class="gacha-spotlight" id="gacha-spotlight">
     <div class="gacha-spotlight-card" id="gacha-spotlight-card"></div>
     <div class="gacha-spotlight-banner" id="gacha-spotlight-banner">OVERDRIVE UNIT DETECTED</div>
   </div>
 
-  <!-- Phase 4: カード開封 -->
   <div class="gacha-result-bg" id="gacha-result-bg"></div>
   <div class="gacha-stars" id="gacha-stars"></div>
   <div id="gacha-multi-results" class="gacha-multi-results"></div>
   <div class="gacha-tally" id="gacha-tally"></div>
   <button class="btn-gacha-close" id="gacha-close-btn" onclick="closeGachaOverlay()">▶ CONTINUE</button>
+</div>
+
+<!-- UNIT PREVIEW OVERLAY（パーティ編成用 回転プレビュー） -->
+<div id="unit-preview-overlay">
+  <div class="up-panel">
+    <div class="up-header">
+      <div>
+        <div class="up-name" id="up-name">UNIT</div>
+        <div style="display:flex;gap:10px;align-items:baseline;">
+          <div class="up-rarity" id="up-rarity">R</div>
+          <div class="up-type" id="up-type">TYPE</div>
+        </div>
+      </div>
+      <button class="up-close" onclick="closeUnitPreview()">✕</button>
+    </div>
+    <div class="up-body">
+      <div class="up-canvas-wrap">
+        <canvas id="unit-preview-canvas" width="280" height="280"></canvas>
+      </div>
+      <div class="up-info">
+        <div class="up-stats" id="up-stats"></div>
+        <div class="up-desc" id="up-desc"></div>
+        <button class="btn-general up-equip" id="up-equip-btn">◈ EQUIP</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- GAME -->
@@ -279,6 +314,23 @@
 </div>
 
 </div><!-- /#app -->
+
+<!-- ============================================================
+     DEVELOPER CONSOLE（開発者専用・隠しデバッグメニュー）
+     有効化: タイトル画面のバージョン表記を7回連続タップ、
+            または URL に ?dev を付けてアクセス（有効化後はF9でも開閉可）
+     ※画面上の FAB ボタンは存在しない。
+     ============================================================ -->
+<div id="dev-panel-overlay" class="dev-panel-overlay">
+  <div class="dev-panel">
+    <div class="dev-panel-header">
+      <div class="dev-panel-title">◈ DEVELOPER CONSOLE ◈</div>
+      <button class="dev-panel-close" onclick="toggleDevPanel()">✕</button>
+    </div>
+    <div class="dev-panel-warn">⚠ 開発・デバッグ専用機能です。通常プレイでは使用しないでください。</div>
+    <div id="dev-panel-body" class="dev-panel-body"></div>
+  </div>
+</div>
 
 <script src="data.js"></script>
 <script src="loader.js"></script>
