@@ -27,7 +27,7 @@ const CHAR_TEMPLATES = [
   { id:3,  name:"TESLA",     type:"全方位",   rarity:"SR",  cost:140, color:"#cc44ff", range:100, damage:45,  cooldown:40,  max:3,  desc:"周囲全敵に電磁パルス放電。" },
   { id:4,  name:"BOMBER",    type:"爆破型",   rarity:"SR",  cost:110, color:"#ff3355", range:150, damage:95,  cooldown:85,  max:4,  desc:"量子炸裂爆発で広範囲殲滅。" },
   { id:5,  name:"PHANTOM",   type:"透過型",   rarity:"SSR", cost:180, color:"#ff44cc", range:135, damage:65,  cooldown:30,  max:3,  desc:"シールドを無視した次元貫通弾。" },
-  { id:6,  name:"RAILGUN",   type:"貫通型",   rarity:"SR",  cost:180, color:"#ffd700", range:620, damage:110, cooldown:130, max:2,  desc:"直線上の敵を貫く超高速レール弾。命中するごとに威力が減衰する（バランス調整済）。" },
+  { id:6,  name:"RAILGUN",   type:"貫通型",   rarity:"SR",  cost:180, color:"#ffd700", range:620, damage:130, cooldown:110, max:2,  desc:"直線上の敵を貫く超高速レール弾。命中するごとに威力が減衰する（バランス調整済）。" },
   { id:7,  name:"GUARDIAN",  type:"砦型",     rarity:"SSR", cost:240, color:"#00ff88", range:110, damage:45,  cooldown:15,  max:2,  desc:"高速連射と高耐久を誇る最終守護者。" },
 
   // ── 新規ユニット ──────────────────────────────────────────────
