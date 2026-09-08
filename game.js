@@ -9,6 +9,33 @@ let battlePath = [];
 let pathCells  = new Set();
 let effects    = [];
 
+// ── 演出設定（軽量化モード / エフェクト量）──────────────────
+function fxLevel()  { return (playerData.settings && playerData.settings.effectLevel) || 'high'; }
+function fxMult()   { const l = fxLevel(); return l === 'low' ? 0.35 : l === 'mid' ? 0.7 : 1; }
+function isLightMode() { return !!(window.__lightMode); }
+
+// 軽量化モード: キャンバスの shadowBlur を常時0にするパッチ
+(function patchShadowBlur() {
+  try {
+    const proto = CanvasRenderingContext2D.prototype;
+    const desc  = Object.getOwnPropertyDescriptor(proto, 'shadowBlur');
+    if (!desc || !desc.set) return;
+    Object.defineProperty(proto, 'shadowBlur', {
+      get() { return desc.get.call(this); },
+      set(v) { desc.set.call(this, window.__lightMode ? 0 : v); }
+    });
+  } catch(e) {}
+})();
+
+// 星空フィールド（宇宙系演出ベース・全ステージ共通）
+const STARS = Array.from({ length: 120 }, () => ({
+  x: Math.random() * 800, y: Math.random() * 500,
+  s: 0.4 + Math.random() * 1.5,
+  tw: Math.random() * Math.PI * 2,
+  sp: 0.03 + Math.random() * 0.12,
+  hue: Math.random()
+}));
+
 // ──────────────────────────────────────────────
 //  GAME BOOTSTRAP
 // ──────────────────────────────────────────────
@@ -39,7 +66,9 @@ function startBattle(stageData) {
     meteorStrikes: [],     // METEOR着弾予告
     speedMult: 1,          // 1x / 2x / 3x ゲーム速度
     paused: false,
-    usedRevive: false       // OVERDRIVE RESERVES 使用済みフラグ
+    usedRevive: false,      // OVERDRIVE RESERVES 使用済みフラグ
+    timeStopT: 0, timeStopCd: 0,   // TIME STOP スキル
+    blackholes: []                  // SINGULARITY ブラックホール
   };
 
   document.getElementById('g-gimmick').innerText = 'GIMMICK: ' + stageData.gimmick;
@@ -170,6 +199,10 @@ function updateGameUI() {
       if (partialReward > 0) {
         playerData.crystals += partialReward;
       }
+      if (Math.random() < 0.4) {
+        const drop = Math.random() < 0.7 ? 'stardust' : 'quantum';
+        addMaterial(drop, 1 + Math.floor(Math.random() * 2));
+      }
       recordStageResult(wavesDone, false);
       if (typeof autoSave === 'function') autoSave('gameover-partial');
       if (typeof updateMeta === 'function') updateMeta();
@@ -230,6 +263,7 @@ function updateSpeedControlsUI() {
                     gameState.waveTimer >= spawnWindow;
     callBtn.disabled = !canCall;
   }
+  updateTimeStopUI();
 }
 
 // ── 次ウェーブを前倒しで呼び出す（現在の敵が残っていても構わない）──
@@ -371,7 +405,7 @@ class Enemy {
     const biome = gameState.stage.biome;
 
     // Scale more steeply with wave
-    let hm = 1 + wave * 0.55;
+    let hm = 1 + wave * 0.5;
     if (biome === 'cyber')  hm *= 1.5;
     if (biome === 'void')   hm *= 1.3;
     if (biome === 'storm')  hm *= 1.6;
@@ -382,7 +416,7 @@ class Enemy {
 
     if (isBoss) {
       this.type = 'BOSS'; this.spd = 0.6 + wave * 0.04;
-      this.maxHp = 900 * hm; this.sz = 26; this.reward = 200;
+      this.maxHp = 1050 * hm; this.sz = 26; this.reward = 260;
       const bossColors = { forest:'#cc44ff', desert:'#ff8800', cyber:'#00eeff',
                            void:'#ff00ff', swamp:'#88ff00', storm:'#ffff00',
                            ice:'#66ccff', space:'#aa88ff', chaos:'#ff0066',
@@ -481,6 +515,7 @@ class Enemy {
   }
 
   update() {
+    if (gameState.timeStopT > 0) return; // TIME STOP — 敵の時間だけが止まる
     const tgt = battlePath[this.pathIdx + 1];
     if (!tgt) return;
     let s = this.spd;
@@ -538,7 +573,7 @@ class Enemy {
       if (--this.warpCd <= 0) {
         this.warpCd = 250;
         spawnParticles(this.x, this.y, '#ff99ff', 16);
-        this.pathIdx = Math.min(this.pathIdx + 2, battlePath.length - 2);
+        this.pathIdx = Math.min(this.pathIdx + 1, battlePath.length - 2);
         this.x = battlePath[this.pathIdx].x;
         this.y = battlePath[this.pathIdx].y;
         spawnParticles(this.x, this.y, '#ff99ff', 16);
@@ -914,8 +949,16 @@ class Tower {
   }
 
   update() {
-    if (this.cd > 0) { this.cd--; return; }
+    if (this.cd > 0) {
+      // TIME STOP 中は自軍の時間が加速する（リロード2倍速）
+      this.cd -= (gameState.timeStopT > 0 ? 2 : 1);
+      if (this.cd > 0) return;
+      this.cd = 0;
+    }
     const sp = this.tmpl.special;
+
+    // ── TEMPUS — 攻撃しない。TIME STOP スキルの供給源 ──
+    if (sp === 'timestop') return;
 
     // ── AEGIS — repair base integrity (no target needed) ──
     if (sp === 'repair') {
@@ -993,21 +1036,24 @@ class Tower {
       addEffect({ type:'tesla', x:this.x, y:this.y, r:this.getRange(), t:8 });
 
     } else if (this.tmpl.id === 6) {
-      // RAILGUN
+      // RAILGUN — 貫通だが命中ごとに威力が減衰（バランス調整）
       this.angle = Math.atan2(tgt.y - this.y, tgt.x - this.x);
       const cos = Math.cos(this.angle), sin = Math.sin(this.angle);
+      const hits = [];
       gameState.enemies.forEach(e => {
         const ex = e.x - this.x, ey = e.y - this.y;
         const proj = ex * cos + ey * sin;
         const perp = Math.abs(-ex * sin + ey * cos);
-        if (proj > 0 && perp < 18) {
-          e.takeDamage(this.getDamage());
-          spawnParticles(e.x, e.y, this.tmpl.color, 8);
-        }
+        if (proj > 0 && proj <= 620 && perp < 16) hits.push({ e, proj });
+      });
+      hits.sort((a, b) => a.proj - b.proj);
+      hits.forEach((h, i) => {
+        h.e.takeDamage(this.getDamage() * Math.pow(0.82, i));
+        spawnParticles(h.e.x, h.e.y, this.tmpl.color, 6);
       });
       gameState.railBeams.push({
         x1:this.x, y1:this.y,
-        x2:this.x + cos*800, y2:this.y + sin*800,
+        x2:this.x + cos*620, y2:this.y + sin*620,
         t:12, color:this.tmpl.color
       });
 
@@ -1055,9 +1101,11 @@ class Tower {
       gameState.projectiles.push(new MirrorProjectile(this.x, this.y, tgt, this, inRange));
 
     } else if (sp === 'omega') {
-      // OMEGA — attack ALL enemies in range simultaneously
+      // OMEGA — 同時攻撃（バランス調整: ボスへの効果は60%に減衰）
       inRange.forEach(e => {
-        e.takeDamage(this.getDamage());
+        let od = this.getDamage();
+        if (e.isBoss) od *= 0.6;
+        e.takeDamage(od);
         spawnParticles(e.x, e.y, '#ff2200', 12);
         // beam from tower to each enemy
         gameState.omegaBeams.push({ x1:this.x, y1:this.y, x2:e.x, y2:e.y, t:14 });
@@ -1074,10 +1122,16 @@ class Tower {
       gameState.projectiles.push(new Projectile(this.x, this.y, tgt, this));
 
     } else if (sp === 'artillery') {
-      // METEOR — telegraphed delayed strike, massive AOE at impact
+      // METEOR — 強化: 着弾加速・範囲拡大・LV3で2連撃
       gameState.meteorStrikes.push({
-        x: tgt.x, y: tgt.y, timer: 42, dmg: this.getDamage(), r: 100, color: this.tmpl.color
+        x: tgt.x, y: tgt.y, timer: 28, dmg: this.getDamage(), r: 135, color: this.tmpl.color
       });
+      if (this.lv >= 3) {
+        gameState.meteorStrikes.push({
+          x: tgt.x + (Math.random()-0.5)*80, y: tgt.y + (Math.random()-0.5)*80,
+          timer: 46, dmg: this.getDamage() * 0.7, r: 110, color: '#ffaa00'
+        });
+      }
       gameState.floatingTexts.push(new FloatText(this.x, this.y, 'METEOR INCOMING', this.tmpl.color));
       spawnParticles(this.x, this.y, this.tmpl.color, 10);
 
@@ -1109,8 +1163,95 @@ class Tower {
         }, delay);
       });
 
+    } else if (sp === 'blackhole') {
+      // SINGULARITY — ブラックホール生成（吸引＋継続ダメージ）
+      gameState.blackholes.push({
+        x: tgt.x, y: tgt.y, t: 110, r: 115 + this.lv * 12,
+        dmg: this.getDamage() * 0.09
+      });
+      addEffect({ type:'novaflash', x:tgt.x, y:tgt.y, t:12, color:'#9944ff' });
+      gameState.floatingTexts.push(new FloatText(tgt.x, tgt.y, 'SINGULARITY', '#aa66ff'));
+      gameState.screenShake = Math.max(gameState.screenShake, 8);
+
+    } else if (sp === 'quasar') {
+      // QUASAR — 扇状の宇宙線スイープ
+      const baseA = this.angle;
+      inRange.forEach(e => {
+        const a = Math.atan2(e.y - this.y, e.x - this.x);
+        const diff = Math.abs(((a - baseA + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+        if (diff < 0.6) {
+          e.takeDamage(this.getDamage() * 1.15);
+          spawnParticles(e.x, e.y, '#00ffee', 4);
+        }
+      });
+      addEffect({ type:'quasar', x:this.x, y:this.y, a:baseA, t:16 });
+      gameState.screenShake = Math.max(gameState.screenShake, 10);
+
+    } else if (sp === 'starfall') {
+      // STARFALL — ランダム3体へ星屑の雨
+      const sfPool = [...inRange];
+      const sfTargets = [];
+      for (let i = 0; i < 3 && sfPool.length; i++)
+        sfTargets.push(sfPool.splice(Math.floor(Math.random() * sfPool.length), 1)[0]);
+      sfTargets.forEach((t, i) => {
+        gameState.meteorStrikes.push({ x:t.x, y:t.y, timer:16 + i * 13, dmg:this.getDamage(), r:75, color:'#ffee88' });
+      });
+      gameState.floatingTexts.push(new FloatText(this.x, this.y, 'STARFALL', '#ffee88'));
+
+    } else if (sp === 'lux') {
+      // LUX — 光の矛が直線貫通
+      const la = this.angle, lcos = Math.cos(la), lsin = Math.sin(la);
+      gameState.enemies.forEach(e => {
+        const ex = e.x - this.x, ey = e.y - this.y;
+        const proj = ex * lcos + ey * lsin;
+        const perp = Math.abs(-ex * lsin + ey * lcos);
+        if (proj > 0 && proj <= this.getRange() && perp < 11) {
+          e.takeDamage(this.getDamage());
+          spawnParticles(e.x, e.y, '#ffffaa', 4);
+        }
+      });
+      gameState.railBeams.push({
+        x1:this.x, y1:this.y,
+        x2:this.x + lcos * this.getRange(), y2:this.y + lsin * this.getRange(),
+        t:8, color:'#ffffaa'
+      });
+
+    } else if (sp === 'astra') {
+      // ASTRA — 銀河砲撃。直撃＋星雲波及＋星屑の灼熱
+      const admg = this.getDamage();
+      tgt.takeDamage(admg * 1.5);
+      gameState.enemies.forEach(e => {
+        if (e !== tgt && Math.hypot(e.x - tgt.x, e.y - tgt.y) <= 90) e.takeDamage(admg * 0.6);
+      });
+      tgt.infected = Math.max(tgt.infected, 80);
+      addEffect({ type:'astra', x:tgt.x, y:tgt.y, t:30, color:this.tmpl.color });
+      gameState.screenShake = Math.max(gameState.screenShake, 14);
+
+    } else if (sp === 'chrono') {
+      // CHRONO — 時間減速フィールド
+      inRange.forEach(e => {
+        if (!e.juggernaut) e.slowTimer = Math.max(e.slowTimer, 150);
+        e.takeDamage(this.getDamage() * 0.6);
+      });
+      addEffect({ type:'chrono', x:this.x, y:this.y, r:this.getRange(), t:24 });
+
+    } else if (sp === 'supernova') {
+      // NOVA — 超新星爆発
+      const nr = this.getRange();
+      gameState.enemies.forEach(e => {
+        if (Math.hypot(e.x - this.x, e.y - this.y) <= nr) {
+          e.takeDamage(this.getDamage() * 1.3);
+          if (!e.juggernaut) e.slowTimer = Math.max(e.slowTimer, 40);
+          spawnParticles(e.x, e.y, '#ff8844', 5);
+        }
+      });
+      addEffect({ type:'supernova', x:this.x, y:this.y, t:26, color:this.tmpl.color });
+      gameState.floatingTexts.push(new FloatText(this.x, this.y, 'SUPERNOVA', '#ffaa66'));
+      gameState.screenShake = Math.max(gameState.screenShake, 16);
+
     } else {
       gameState.projectiles.push(new Projectile(this.x, this.y, tgt, this));
+      addEffect({ type:'muzzle', x:this.x + Math.cos(this.angle) * 20, y:this.y + Math.sin(this.angle) * 20, t:5, color:this.tmpl.color });
       if (this.lv >= 2 && Math.random() < 0.35) {
         const captTgt = tgt;
         setTimeout(() => {
@@ -1148,6 +1289,29 @@ class Tower {
       ctx.setLineDash([]);
       ctx.strokeStyle = gameState.selectedTower === this ? '#ffffff' : this.tmpl.color;
       ctx.lineWidth   = gameState.selectedTower === this ? 2.5 : 1.8;
+    }
+    // LV4+ 黄金コア / LV5 ルーン環
+    if (this.lv >= 4) {
+      ctx.save();
+      ctx.fillStyle = '#ffd700';
+      ctx.beginPath(); ctx.arc(0, 0, 4, 0, Math.PI*2); ctx.fill();
+      ctx.globalAlpha = 0.5 + Math.sin(gameState.frame * 0.15) * 0.3;
+      ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI*2);
+      ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 1; ctx.stroke();
+      ctx.restore();
+    }
+    if (this.lv >= 5) {
+      ctx.save();
+      ctx.rotate(-gameState.frame * 0.04);
+      ctx.strokeStyle = this.tmpl.color + '88'; ctx.lineWidth = 1;
+      for (let i = 0; i < 6; i++) {
+        const a = Math.PI / 3 * i;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * 27, Math.sin(a) * 27);
+        ctx.lineTo(Math.cos(a + 0.35) * 27, Math.sin(a + 0.35) * 27);
+        ctx.stroke();
+      }
+      ctx.restore();
     }
     // LV2 ring
     if (this.lv >= 2) {
@@ -1331,6 +1495,89 @@ class Tower {
         ctx.restore();
       }
       ctx.beginPath(); ctx.arc(0,0,5,0,Math.PI*2); ctx.fill();
+    } else if (id===23) {
+      // SINGULARITY — 渦巻く闇の円盤
+      ctx.beginPath(); ctx.arc(0,0,12,0,Math.PI*2); ctx.fill(); ctx.stroke();
+      ctx.save();
+      ctx.rotate(gameState.frame * 0.1);
+      ctx.strokeStyle = this.tmpl.color + 'aa';
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath(); ctx.arc(0, 0, 6 + i * 3.5, i, i + 2.2); ctx.stroke();
+      }
+      ctx.restore();
+    } else if (id===24) {
+      // QUASAR — コア＋放つジェット
+      ctx.beginPath(); ctx.arc(0,0,8,0,Math.PI*2); ctx.fill(); ctx.stroke();
+      ctx.save();
+      ctx.rotate(gameState.frame * 0.06);
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(0,-15); ctx.lineTo(0,15); ctx.stroke();
+      ctx.rotate(Math.PI/2);
+      ctx.globalAlpha = 0.5;
+      ctx.beginPath(); ctx.moveTo(0,-11); ctx.lineTo(0,11); ctx.stroke();
+      ctx.restore();
+    } else if (id===25) {
+      // STARFALL — 五芒星
+      ctx.beginPath();
+      for (let i = 0; i < 10; i++) {
+        const a = -Math.PI/2 + Math.PI/5*i;
+        const r = i % 2 === 0 ? 14 : 6;
+        ctx[i===0?'moveTo':'lineTo'](Math.cos(a)*r, Math.sin(a)*r);
+      }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    } else if (id===26) {
+      // LUX — 光の矛
+      ctx.beginPath();
+      ctx.moveTo(16,0); ctx.lineTo(2,-3.5); ctx.lineTo(-14,-1.5);
+      ctx.lineTo(-14,1.5); ctx.lineTo(2,3.5);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    } else if (id===27) {
+      // ASTRA — 渦巻く銀河
+      ctx.save();
+      ctx.rotate(gameState.frame * 0.04);
+      for (let arm = 0; arm < 2; arm++) {
+        ctx.beginPath();
+        for (let t = 0; t < 14; t++) {
+          const a = arm * Math.PI + t * 0.42;
+          const r = 2 + t * 0.85;
+          ctx[t===0?'moveTo':'lineTo'](Math.cos(a)*r, Math.sin(a)*r);
+        }
+        ctx.globalAlpha = 0.75; ctx.stroke();
+      }
+      ctx.restore();
+      ctx.beginPath(); ctx.arc(0,0,3.5,0,Math.PI*2); ctx.fill();
+    } else if (id===28) {
+      // CHRONO — 時計盤
+      ctx.beginPath(); ctx.arc(0,0,13,0,Math.PI*2); ctx.fill(); ctx.stroke();
+      for (let i = 0; i < 12; i++) {
+        const a = Math.PI/6*i;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a)*10, Math.sin(a)*10);
+        ctx.lineTo(Math.cos(a)*12, Math.sin(a)*12);
+        ctx.stroke();
+      }
+      const cha = gameState.frame * 0.02;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(Math.cos(cha)*7, Math.sin(cha)*7); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(Math.cos(-cha*0.5)*10, Math.sin(-cha*0.5)*10); ctx.stroke();
+    } else if (id===29) {
+      // TEMPUS — 砂時計
+      ctx.beginPath();
+      ctx.moveTo(-9,-13); ctx.lineTo(9,-13); ctx.lineTo(0,-1); ctx.closePath();
+      ctx.moveTo(-9,13); ctx.lineTo(9,13); ctx.lineTo(0,1); ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      const tsy = ((gameState.frame * 0.15) % 10) - 5;
+      ctx.fillStyle = this.tmpl.color;
+      ctx.fillRect(-0.8, tsy, 1.6, 1.6);
+    } else if (id===30) {
+      // NOVA — 光芒の星
+      ctx.beginPath();
+      for (let i = 0; i < 16; i++) {
+        const a = Math.PI/8*i + gameState.frame*0.02;
+        const r = i % 2 === 0 ? 15 : 8;
+        ctx[i===0?'moveTo':'lineTo'](Math.cos(a)*r, Math.sin(a)*r);
+      }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
     }
   }
 }
@@ -1592,7 +1839,9 @@ class FloatText {
 }
 
 function spawnParticles(x, y, c, n) {
-  for (let i = 0; i < n; i++) gameState.particles.push(new Particle(x, y, c));
+  let count = Math.round(n * fxMult() * (isLightMode() ? 0.5 : 1));
+  if (fxLevel() === 'low') count = Math.min(count, 10);
+  for (let i = 0; i < count; i++) gameState.particles.push(new Particle(x, y, c));
 }
 function addEffect(e) { effects.push(e); }
 
@@ -1601,6 +1850,7 @@ function addEffect(e) { effects.push(e); }
 // ──────────────────────────────────────────────
 function drawBackground() {
   const stage = gameState.stage;
+  const ambFx = fxLevel() !== 'low' && !isLightMode();
 
   const bgGrad = ctx.createRadialGradient(400, 250, 80, 400, 250, 500);
   const bgMap = {
@@ -1622,7 +1872,7 @@ function drawBackground() {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   // Biome ambient particles
-  if (stage.biome === 'void' && gameState.frame % 3 === 0) {
+  if (ambFx && stage.biome === 'void' && gameState.frame % 3 === 0) {
     ctx.save();
     ctx.fillStyle = '#cc44ff';
     ctx.globalAlpha = 0.15 + Math.random() * 0.1;
@@ -1631,7 +1881,7 @@ function drawBackground() {
     ctx.fillRect(vx, vy, 2, 2);
     ctx.restore();
   }
-  if (stage.biome === 'storm' && gameState.frame % 60 === 0) {
+  if (ambFx && stage.biome === 'storm' && gameState.frame % 60 === 0) {
     ctx.save();
     ctx.strokeStyle = '#ffffaa';
     ctx.globalAlpha = 0.25;
@@ -1640,7 +1890,7 @@ function drawBackground() {
     ctx.beginPath(); ctx.moveTo(lx, 0); ctx.lineTo(lx + (Math.random()-0.5)*60, canvas.height); ctx.stroke();
     ctx.restore();
   }
-  if (stage.biome === 'ice' && gameState.frame % 4 === 0) {
+  if (ambFx && stage.biome === 'ice' && gameState.frame % 4 === 0) {
     ctx.save();
     ctx.fillStyle = '#bbeeff';
     ctx.globalAlpha = 0.2 + Math.random() * 0.15;
@@ -1648,7 +1898,7 @@ function drawBackground() {
     ctx.fillRect(sx, sy, 1.5, 1.5);
     ctx.restore();
   }
-  if (stage.biome === 'space' && gameState.frame % 5 === 0) {
+  if (ambFx && stage.biome === 'space' && gameState.frame % 5 === 0) {
     ctx.save();
     ctx.fillStyle = '#ddccff';
     ctx.globalAlpha = 0.3 + Math.random() * 0.3;
@@ -1656,7 +1906,7 @@ function drawBackground() {
     ctx.fillRect(spx, spy, 1, 1);
     ctx.restore();
   }
-  if (stage.biome === 'chaos' && gameState.frame % 45 === 0) {
+  if (ambFx && stage.biome === 'chaos' && gameState.frame % 45 === 0) {
     ctx.save();
     ctx.strokeStyle = '#ff0066';
     ctx.globalAlpha = 0.2;
@@ -1665,7 +1915,7 @@ function drawBackground() {
     ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(canvas.width, gy); ctx.stroke();
     ctx.restore();
   }
-  if (stage.biome === 'infinity' && gameState.frame % 4 === 0) {
+  if (ambFx && stage.biome === 'infinity' && gameState.frame % 4 === 0) {
     ctx.save();
     const hue = (gameState.frame * 3) % 360;
     ctx.fillStyle = `hsl(${hue}, 90%, 70%)`;
@@ -1675,6 +1925,18 @@ function drawBackground() {
     ctx.fillRect(ix, iy, 1.5, 1.5);
     ctx.restore();
   }
+
+  // 宇宙スターフィールド（全ステージ共通の基礎演出）
+  const starN = isLightMode() ? 40 : fxLevel() === 'low' ? 50 : fxLevel() === 'mid' ? 85 : 120;
+  ctx.save();
+  for (let i = 0; i < starN; i++) {
+    const st = STARS[i];
+    const tw2 = 0.35 + Math.abs(Math.sin(gameState.frame * st.sp + st.tw)) * 0.65;
+    ctx.globalAlpha = tw2 * 0.8;
+    ctx.fillStyle = st.hue < 0.7 ? '#ffffff' : st.hue < 0.9 ? '#88ccff' : '#ffddaa';
+    ctx.fillRect(st.x, st.y, st.s, st.s);
+  }
+  ctx.restore();
 
   const gcMap = {
     forest: 'rgba(0,200,80,0.12)',
@@ -1694,10 +1956,12 @@ function drawBackground() {
   for (let i = 0; i <= canvas.width;  i += GS) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke(); }
   for (let i = 0; i <= canvas.height; i += GS) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(canvas.width, i); ctx.stroke(); }
 
-  ctx.fillStyle = gc.replace('0.12', '0.25');
-  for (let i = 0; i <= canvas.width;  i += GS) {
-    for (let j = 0; j <= canvas.height; j += GS) {
-      ctx.fillRect(i - 0.5, j - 0.5, 1.5, 1.5);
+  if (!isLightMode()) {
+    ctx.fillStyle = gc.replace('0.12', '0.25');
+    for (let i = 0; i <= canvas.width;  i += GS) {
+      for (let j = 0; j <= canvas.height; j += GS) {
+        ctx.fillRect(i - 0.5, j - 0.5, 1.5, 1.5);
+      }
     }
   }
 
@@ -1897,9 +2161,10 @@ function gameTick() {
       gameState.state = 'clear';
       const reward = 300 + (gameState.stage.id >= 3 ? 150 : 0);
       playerData.crystals += reward;
+      const gained = grantStageMaterials(gameState.stage, gameState.wave);
       recordStageResult(gameState.wave, true);
       if (typeof autoSave === 'function') autoSave('mission-clear');
-      showModal("MISSION COMPLETE", `セクターコアの完全防衛に成功。報酬: ${reward}コア結晶`, "var(--green)");
+      showModal("MISSION COMPLETE", `セクターコアの完全防衛に成功。報酬: ${reward}コア結晶` + (gained.length ? `\n回収素材: ${formatGainedMaterials(gained)}` : ''), "var(--green)");
       updateMeta();
     }
   }
@@ -1951,12 +2216,59 @@ function gameTick() {
     if (m.timer <= 0 && !m.resolved) {
       m.resolved = true;
       addEffect({ type:'explosion', x:m.x, y:m.y, r:m.r, t:20 });
-      gameState.enemies.forEach(e => { if (Math.hypot(e.x-m.x, e.y-m.y) <= m.r) e.takeDamage(m.dmg); });
+      gameState.enemies.forEach(e => { if (Math.hypot(e.x-m.x, e.y-m.y) <= m.r) { e.takeDamage(m.dmg); e.infected = Math.max(e.infected, 50); } });
       spawnParticles(m.x, m.y, m.color || '#ff4400', 30);
       gameState.screenShake = Math.max(gameState.screenShake, 16);
     }
   });
   gameState.meteorStrikes = gameState.meteorStrikes.filter(m => !m.resolved);
+
+  // TIME STOP 制御
+  if (gameState.timeStopT > 0) {
+    gameState.timeStopT--;
+    if (gameState.timeStopT === 0)
+      gameState.floatingTexts.push(new FloatText(canvas.width/2, canvas.height/2 - 40, 'TIME RESUMED', '#ffffff'));
+  }
+  if (gameState.timeStopCd > 0) gameState.timeStopCd--;
+
+  // SINGULARITY — ブラックホール処理（吸引＋継続ダメージ）
+  if (!gameState.blackholes) gameState.blackholes = [];
+  gameState.blackholes.forEach(bh => {
+    bh.t--;
+    gameState.enemies.forEach(e => {
+      if (e.hp <= 0) return;
+      const d = Math.hypot(e.x - bh.x, e.y - bh.y);
+      if (d < bh.r) {
+        if (!e.juggernaut && d > 16) {
+          e.x += (bh.x - e.x) / d * 3.4;
+          e.y += (bh.y - e.y) / d * 3.4;
+          e.pulled = true;
+        }
+        e.takeDamage(bh.dmg);
+      }
+    });
+    ctx.save();
+    ctx.translate(bh.x, bh.y);
+    const bhp = Math.min(1, bh.t / 20);
+    ctx.globalAlpha = Math.min(1, bhp + 0.25);
+    ctx.fillStyle = '#05000f';
+    ctx.beginPath(); ctx.arc(0, 0, 15, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#9944ff';
+    ctx.lineWidth = 2;
+    ctx.save();
+    ctx.rotate(gameState.frame * 0.15);
+    ctx.beginPath(); ctx.ellipse(0, 0, 26, 9, 0, 0, Math.PI*2); ctx.stroke();
+    ctx.strokeStyle = '#ff9944';
+    ctx.beginPath(); ctx.ellipse(0, 0, 21, 6.5, 0, 0, Math.PI*2); ctx.stroke();
+    ctx.restore();
+    ctx.strokeStyle = '#aa66ff';
+    ctx.setLineDash([4, 6]);
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(0, 0, bh.r, 0, Math.PI*2); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  });
+  gameState.blackholes = gameState.blackholes.filter(b => b.t > 0);
 
   // Towers
   gameState.towers.forEach(t => { t.update(); t.draw(); });
@@ -1978,7 +2290,14 @@ function gameTick() {
       gameState.money += e.reward;
       spawnParticles(e.x, e.y, e.color, e.isBoss ? 80 : 18);
       gameState.floatingTexts.push(new FloatText(e.x, e.y, `+${e.reward}C`, '#ffd700'));
-      if (e.isBoss) gameState.screenShake = 25;
+      if (e.isBoss) {
+        gameState.screenShake = 25;
+        const drops = [];
+        if (Math.random() < 0.45) { addMaterial('voidshard', 1);  drops.push('VOID SHARD'); }
+        if (Math.random() < 0.35) { addMaterial('novacore', 1);   drops.push('NOVA CORE'); }
+        if (Math.random() < 0.25) { addMaterial('chronogear', 1); drops.push('CHRONO GEAR'); }
+        if (drops.length) gameState.floatingTexts.push(new FloatText(e.x, e.y - 24, '⬡ ' + drops.join(' + '), '#ffd700'));
+      }
 
       // SPLITTER — spawns 2 SWARM enemies on death
       if (e.splits) {
@@ -2046,6 +2365,76 @@ function gameTick() {
       ctx.beginPath(); ctx.arc(ef.x, ef.y, Math.max(1, pr * 520), 0, Math.PI*2); ctx.stroke();
       ctx.fillStyle = `rgba(8,0,24,${pr * 0.28})`;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
+    } else if (ef.type === 'supernova') {
+      const p = Math.max(0, Math.min(1, ef.t / 26));
+      ctx.strokeStyle = '#ffaa44'; ctx.shadowColor = '#ff8844';
+      ctx.fillStyle = `rgba(255,140,40,${p * 0.15})`;
+      ctx.beginPath(); ctx.arc(ef.x, ef.y, 90 * (1 - p) + 10, 0, Math.PI*2); ctx.fill();
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(ef.x, ef.y, 110 * (1 - p), 0, Math.PI*2); ctx.stroke();
+      ctx.lineWidth = 1.5; ctx.strokeStyle = '#ffe0aa';
+      ctx.beginPath(); ctx.arc(ef.x, ef.y, 70 * (1 - p) + 20, 0, Math.PI*2); ctx.stroke();
+    } else if (ef.type === 'astra') {
+      ctx.save();
+      ctx.translate(ef.x, ef.y);
+      ctx.rotate(gameState.frame * 0.12);
+      const ap = Math.max(0, Math.min(1, ef.t / 30));
+      ctx.globalAlpha = ap;
+      for (let arm = 0; arm < 2; arm++) {
+        ctx.strokeStyle = arm ? '#aaddff' : '#cc44ff';
+        ctx.beginPath();
+        for (let tt = 0; tt < 12; tt++) {
+          const a = arm * Math.PI + tt * 0.5;
+          const r = 3 + tt * 3.4 * (1 - ap * 0.4);
+          ctx[tt===0?'moveTo':'lineTo'](Math.cos(a)*r, Math.sin(a)*r);
+        }
+        ctx.stroke();
+      }
+      ctx.restore();
+    } else if (ef.type === 'chrono') {
+      const cp = Math.max(0, Math.min(1, ef.t / 24));
+      ctx.save();
+      ctx.translate(ef.x, ef.y);
+      ctx.strokeStyle = '#ffd700'; ctx.shadowColor = '#ffd700';
+      ctx.globalAlpha = cp * 0.8;
+      ctx.setLineDash([8, 6]);
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(0, 0, ef.r, 0, Math.PI*2); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.rotate(gameState.frame * 0.05);
+      for (let i = 0; i < 12; i++) {
+        const a = Math.PI/6*i;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a)*(ef.r-6), Math.sin(a)*(ef.r-6));
+        ctx.lineTo(Math.cos(a)*ef.r, Math.sin(a)*ef.r);
+        ctx.stroke();
+      }
+      ctx.restore();
+    } else if (ef.type === 'quasar') {
+      const qp = Math.max(0, Math.min(1, ef.t / 16));
+      ctx.save();
+      ctx.translate(ef.x, ef.y);
+      ctx.rotate(ef.a);
+      const qgrad = ctx.createLinearGradient(0,0,200,0);
+      qgrad.addColorStop(0, `rgba(0,255,238,${0.5 * qp})`);
+      qgrad.addColorStop(1, 'rgba(0,255,238,0)');
+      ctx.fillStyle = qgrad;
+      ctx.beginPath();
+      ctx.moveTo(0,0);
+      ctx.arc(0, 0, 200, -0.6, 0.6);
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+    } else if (ef.type === 'novaflash') {
+      const fp = Math.max(0, Math.min(1, ef.t / 12));
+      ctx.strokeStyle = ef.color || '#9944ff'; ctx.shadowColor = ef.color || '#9944ff';
+      ctx.globalAlpha = fp;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(ef.x, ef.y, 50 * (1 - fp) + 6, 0, Math.PI*2); ctx.stroke();
+    } else if (ef.type === 'muzzle') {
+      const mp = Math.max(0, ef.t / 5);
+      ctx.fillStyle = ef.color || '#fff';
+      ctx.globalAlpha = mp * 0.8;
+      ctx.beginPath(); ctx.arc(ef.x, ef.y, 4 + (1 - mp) * 5, 0, Math.PI*2); ctx.fill();
     }
     ctx.globalAlpha = 1; ctx.restore(); ef.t--;
   });
@@ -2056,6 +2445,45 @@ function gameTick() {
   gameState.particles = gameState.particles.filter(p => p.life > 0);
   gameState.floatingTexts.forEach(t => { t.update(); t.draw(); });
   gameState.floatingTexts = gameState.floatingTexts.filter(t => t.life > 0);
+
+  // 自動スキップ（設定ON時、敵が少ないタイミングで次ウェーブを自動呼出し）
+  if (playerData.settings && playerData.settings.autoSkip && gameState.state === 'playing') {
+    const asw = 500 + gameState.wave * 30;
+    if (gameState.wave < gameState.stage.waves && gameState.waveTimer >= asw && gameState.enemies.length <= 2) {
+      callNextWave();
+    }
+  }
+
+  // TIME STOP 演出 — 宇宙の時計が画面を覆う
+  if (gameState.timeStopT > 0) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(80,60,160,0.13)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.strokeStyle = '#ffd700';
+    ctx.globalAlpha = 0.55 + Math.sin(gameState.frame * 0.1) * 0.15;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([10, 8]);
+    ctx.beginPath(); ctx.arc(0, 0, 90, 0, Math.PI*2); ctx.stroke();
+    ctx.setLineDash([]);
+    for (let i = 0; i < 12; i++) {
+      const a = Math.PI/6*i;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a)*78, Math.sin(a)*78);
+      ctx.lineTo(Math.cos(a)*88, Math.sin(a)*88);
+      ctx.stroke();
+    }
+    const tha = gameState.frame * 0.03;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(Math.cos(tha)*48, Math.sin(tha)*48); ctx.stroke();
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(Math.cos(-tha*0.5)*68, Math.sin(-tha*0.5)*68); ctx.stroke();
+    ctx.font = 'bold 12px "Orbitron",monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffd700';
+    ctx.fillText('TIME STOP', 0, -104);
+    ctx.restore();
+  }
 
   drawPreview();
   ctx.restore();
@@ -2117,3 +2545,30 @@ canvas.addEventListener('touchend', e => {
   gameState.hoverCell = null;
   placeTower(cell);
 }, { passive:false });
+
+
+// ── TIME STOP バトルスキル（TEMPUS設置で解放）────────────────
+function updateTimeStopUI() {
+  if (!gameState) return;
+  const btn = document.getElementById('btn-timestop');
+  if (!btn) return;
+  const hasTs = gameState.towers.some(t => t.tmpl.special === 'timestop');
+  btn.style.display = hasTs ? 'inline-block' : 'none';
+  if (!hasTs) return;
+  btn.disabled = gameState.timeStopCd > 0;
+  btn.classList.toggle('active', gameState.timeStopT > 0);
+  btn.textContent = gameState.timeStopCd > 0
+    ? `⏱ ${Math.ceil(gameState.timeStopCd / 60)}s`
+    : (gameState.timeStopT > 0 ? '⏱ STOPPING...' : '⏱ TIME STOP');
+}
+
+function activateTimeStop() {
+  if (!gameState || gameState.state !== 'playing' || gameState.timeStopCd > 0) return;
+  const ts = gameState.towers.find(t => t.tmpl.special === 'timestop');
+  if (!ts) return;
+  gameState.timeStopT = 150 + ts.lv * 40;
+  gameState.timeStopCd = 900;
+  gameState.floatingTexts.push(new FloatText(canvas.width / 2, canvas.height / 2 - 60, '⏱ TIME STOP ⏱', '#ffd700'));
+  gameState.screenShake = Math.max(gameState.screenShake, 14);
+  updateGameUI();
+}
