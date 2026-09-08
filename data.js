@@ -4,12 +4,13 @@
 
 const playerData = {
   crystals: 600,
-  baseLevels: [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  baseLevels: [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
   unlocked: [0,1],
   party: [0,1],
   stageBestWave: [0,0,0,0,0,0,0,0,0,0],
   stageCleared:  [false,false,false,false,false,false,false,false,false,false],
   augments: [0,0,0,0,0,0],
+  enemyKills: {},
   soundEnabled: true
 };
 
@@ -17,30 +18,30 @@ const playerData = {
 const TOWER_MAX_LV = 5;
 
 const CHAR_TEMPLATES = [
-  // ── 既存ユニット ──────────────────────────────────────────────
+  // ── 既存ユニット（バランス調整済み）─────────────────────────
   { id:0,  name:"BLASTER",   type:"連射型",   rarity:"R",   cost:50,  color:"#00e8ff", range:120, damage:15,  cooldown:20,  max:10, desc:"プラズマを連射。序盤の主力ユニット。" },
   { id:1,  name:"SNIPER",    type:"単体狙撃", rarity:"SR",  cost:130, color:"#ffaa00", range:280, damage:75,  cooldown:85,  max:5,  desc:"超遠距離の高電圧狙撃。貫通弾丸。" },
-  { id:2,  name:"FREEZER",   type:"遅延型",   rarity:"R",   cost:70,  color:"#88ccff", range:100, damage:6,   cooldown:35,  max:4,  desc:"絶対零度で敵を鈍化させる。" },
-  { id:3,  name:"TESLA",     type:"全方位",   rarity:"SR",  cost:160, color:"#cc44ff", range:95,  damage:28,  cooldown:50,  max:3,  desc:"周囲全敵に電磁パルス放電。" },
-  { id:4,  name:"BOMBER",    type:"爆破型",   rarity:"SR",  cost:110, color:"#ff3355", range:150, damage:90,  cooldown:105, max:4,  desc:"量子炸裂爆発で広範囲殲滅。" },
+  { id:2,  name:"FREEZER",   type:"遅延型",   rarity:"R",   cost:70,  color:"#88ccff", range:100, damage:8,   cooldown:35,  max:4,  desc:"絶対零度で敵を鈍化させる。" },
+  { id:3,  name:"TESLA",     type:"全方位",   rarity:"SR",  cost:160, color:"#cc44ff", range:95,  damage:36,  cooldown:42,  max:3,  desc:"周囲全敵に電磁パルス放電。" },
+  { id:4,  name:"BOMBER",    type:"爆破型",   rarity:"SR",  cost:110, color:"#ff3355", range:150, damage:90,  cooldown:90,  max:4,  desc:"量子炸裂爆発で広範囲殲滅。" },
   { id:5,  name:"PHANTOM",   type:"透過型",   rarity:"SSR", cost:200, color:"#ff44cc", range:130, damage:55,  cooldown:30,  max:3,  desc:"シールドを無視した次元貫通弾。" },
-  { id:6,  name:"RAILGUN",   type:"貫通型",   rarity:"SR",  cost:180, color:"#ffd700", range:800, damage:120, cooldown:120, max:2,  desc:"直線上全敵を貫く超高速レール弾。" },
-  { id:7,  name:"GUARDIAN",  type:"砦型",     rarity:"SSR", cost:250, color:"#00ff88", range:80,  damage:35,  cooldown:15,  max:2,  desc:"低射程だが超高速連射と高耐久を誇る最終守護者。" },
+  { id:6,  name:"RAILGUN",   type:"貫通型",   rarity:"SR",  cost:180, color:"#ffd700", range:800, damage:150, cooldown:95,  max:2,  desc:"直線上全敵を貫く超高速レール弾。" },
+  { id:7,  name:"GUARDIAN",  type:"砦型",     rarity:"SSR", cost:250, color:"#00ff88", range:105, damage:42,  cooldown:15,  max:2,  desc:"高速連射と高耐久を誇る最終守護者。" },
 
   // ── 新規ユニット ──────────────────────────────────────────────
   { id:8,  name:"VORTEX",    type:"吸引型",   rarity:"SR",  cost:145, color:"#aa55ff", range:160, damage:20,  cooldown:60,  max:3,
     desc:"重力場を生成して敵を引き寄せつつ継続ダメージを与える。",
-    special:"vortex"  // 敵をタワーに向かって引き寄せる
+    special:"vortex"
   },
-  { id:9,  name:"VIRUS",     type:"感染型",   rarity:"SR",  cost:155, color:"#55ff44", range:140, damage:12,  cooldown:45,  max:4,
+  { id:9,  name:"VIRUS",     type:"感染型",   rarity:"SR",  cost:155, color:"#55ff44", range:140, damage:16,  cooldown:45,  max:4,
     desc:"ウイルス弾で敵をDOT感染。感染した敵は毎フレームじわじわHPを削られる。",
     special:"virus"
   },
-  { id:10, name:"OVERLOAD",  type:"過負荷型", rarity:"SSR", cost:220, color:"#ff8800", range:110, damage:45,  cooldown:40,  max:2,
+  { id:10, name:"OVERLOAD",  type:"過負荷型", rarity:"SSR", cost:220, color:"#ff8800", range:110, damage:52,  cooldown:40,  max:2,
     desc:"連続攻撃でヒートゲージが溜まり、満タンで超火力の熱爆発が炸裂。",
     special:"overload"
   },
-  { id:11, name:"MIRROR",    type:"反射型",   rarity:"R",   cost:80,  color:"#88eeff", range:135, damage:22,  cooldown:30,  max:6,
+  { id:11, name:"MIRROR",    type:"反射型",   rarity:"R",   cost:80,  color:"#88eeff", range:135, damage:28,  cooldown:30,  max:6,
     desc:"弾丸が1回だけ近くの敵に向かってバウンドし2体同時にダメージ。",
     special:"mirror"
   },
@@ -54,24 +55,72 @@ const CHAR_TEMPLATES = [
     desc:"電撃弾が敵から敵へ渡り歩く連鎖攻撃。密集した敵の群れに強い。",
     special:"chain"
   },
-  { id:14, name:"AMPLIFIER", type:"支援型",   rarity:"SR",  cost:150, color:"#ffee44", range:110, damage:5,   cooldown:60,  max:3,
-    desc:"周囲の味方タワーの攻撃力とリロード速度を底上げする支援施設。単体火力は低いが編成の要になる。",
+  { id:14, name:"AMPLIFIER", type:"支援型",   rarity:"SR",  cost:150, color:"#ffee44", range:110, damage:8,   cooldown:60,  max:3,
+    desc:"周囲の味方タワーの攻撃力とリロード速度を底上げする支援施設。",
     special:"support"
   },
-  { id:15, name:"PULSAR",    type:"麻痺型",   rarity:"R",   cost:90,  color:"#ff66ff", range:115, damage:10,  cooldown:55,  max:5,
-    desc:"命中時に一定確率で敵を短時間スタンさせる衝撃波。足止めに優れる。",
+  { id:15, name:"PULSAR",    type:"麻痺型",   rarity:"R",   cost:90,  color:"#ff66ff", range:115, damage:14,  cooldown:55,  max:5,
+    desc:"命中時に高確率で敵を短時間スタンさせる衝撃波。足止けに優れる。",
     special:"stun"
   },
-  { id:16, name:"METEOR",    type:"砲撃型",   rarity:"SSR", cost:260, color:"#ff4400", range:230, damage:150, cooldown:170, max:2,
+  { id:16, name:"METEOR",    type:"砲撃型",   rarity:"SSR", cost:260, color:"#ff4400", range:230, damage:150, cooldown:150, max:2,
     desc:"着弾まで時間差のある大質量弾を撃ち込み、着弾点周辺を壊滅させる超広範囲砲撃。",
     special:"artillery"
+  },
+
+  // ── 最新鋭ユニット（OVERDRIVE IV ライン）─────────────────────
+  { id:17, name:"SENTINEL",  type:"双砲型",   rarity:"SSR", cost:240, color:"#00c8ff", range:150, damage:30,  cooldown:35,  max:3,
+    desc:"双管キャノンで異なる敵2体を同時に攻撃。常に2倍の迎撃力を誇る自動哨戒機。",
+    special:"sentry"
+  },
+  { id:18, name:"TEMPEST",   type:"混沌型",   rarity:"SR",  cost:165, color:"#ccff00", range:140, damage:26,  cooldown:38,  max:4,
+    desc:"每一撃ごとにランダムで効果が変化する不安定な実験兵器。鈍化・スタン・炎上・会心のいずれかを引き当てる。",
+    special:"chaos"
+  },
+  { id:19, name:"HAVOC",     type:"跳弾型",   rarity:"SR",  cost:175, color:"#ff8866", range:150, damage:30,  cooldown:55,  max:4,
+    desc:"特殊跳弾が敵に当たるたびに威力が15%ずつ増大しながら最大6体へ跳ね返る。大群ほど壊滅的。",
+    special:"ricochet"
+  },
+  { id:20, name:"AEGIS",     type:"修復型",   rarity:"SSR", cost:210, color:"#00ffcc", range:90,  damage:0,   cooldown:600, max:2,
+    desc:"戦場グリッドを自動修復。定期稼働でインテグリティ（HP）を1ずつ回復し、上限まで持ち直させる。攻撃はしない。",
+    special:"repair"
+  },
+  { id:21, name:"ECLIPSE",   type:"皆既型",   rarity:"SSR", cost:330, color:"#aa88ff", range:250, damage:160, cooldown:420, max:1,
+    desc:"全画面を闇の衝撃波で包み、マップ上の全敵に大ダメージと全域鈍化を与える。長い充電間隔が欠点。",
+    special:"eclipse"
+  },
+  { id:22, name:"TRINITY",   type:"三連型",   rarity:"SSR", cost:280, color:"#ffdd44", range:160, damage:40,  cooldown:48,  max:2,
+    desc:"三重砲身が同一標的へ3連続射撃。単体に対する溶断性能は全ユニットトップクラス。",
+    special:"burst"
   },
 ];
 
 const RARITY_COLORS = { R: "#00e8ff", SR: "#cc44ff", SSR: "#ffd700" };
 
+// ── 敵アーカイブ（図鑑）データ ────────────────────────────────
+// hp / spd はベース値。実際の戦闘ではウェーブ数・バイオーム倍率が掛かる。
+const ENEMY_CATALOG = [
+  { type:'NORM',       name:'NORM',       color:'#ff4466', hp:45,   spd:1.5, ability:'標準的な侵攻ユニット。特筆すべき能力は持たない。' },
+  { type:'RUN',        name:'RUNNER',     color:'#ff55bb', hp:25,   spd:3.2, ability:'極めて高速。低耐久だが突破までの時間が非常に短い。' },
+  { type:'TANK',       name:'TANK',       color:'#ffaa00', hp:150,  spd:0.7, ability:'超重装甲。高HP・低速度の歩く壁。' },
+  { type:'SHIELD',     name:'SHIELD',     color:'#44ddff', hp:70,   spd:1.1, ability:'エネルギーシールドを展開。シールドを削りきるまでは本体にダメージが通らない。' },
+  { type:'SWARM',      name:'SWARM',      color:'#44ff99', hp:16,   spd:2.3, ability:'小さく脆いが集団で襲来する。数で押し切るタイプ。' },
+  { type:'REGEN',      name:'REGENERATOR',color:'#88ff44', hp:80,   spd:1.2, ability:'常時自己再生。長期戦・漏れ撃ちに弱い。' },
+  { type:'GHOST',      name:'GHOST',      color:'#cc88ff', hp:55,   spd:1.8, ability:'半霊体化して物理攻撃を60%軽減する。PHANTOMが有効。' },
+  { type:'ARMOR',      name:'ARMOR',      color:'#cc6600', hp:110,  spd:0.9, ability:'装甲板で全てのダメージを50%軽減する。' },
+  { type:'SPLITTER',   name:'SPLITTER',   color:'#ff6688', hp:60,   spd:1.6, ability:'撃破時に2体のSWARMへ分裂する。' },
+  { type:'HEALER',     name:'HEALER',     color:'#66ffaa', hp:65,   spd:1.0, ability:'周囲75pxの味方を毎フレーム回復させる。最優先で撃破すべき。' },
+  { type:'STEALTH',    name:'STEALTH',    color:'#8888ff', hp:50,   spd:2.0, ability:'周期的に索敵不能になる。範囲攻撃には有効。' },
+  { type:'JUGGERNAUT', name:'JUGGERNAUT', color:'#996633', hp:220,  spd:0.5, ability:'鈍化・スタン・引力への完全耐性を持つ超重装甲ユニット。' },
+  { type:'DASHER',     name:'DASHER',     color:'#ffcc00', hp:48,   spd:1.6, ability:'周期的に3倍近い速度でダッシュ突進する。捉えどころがない。' },
+  { type:'NINJA',      name:'NINJA',      color:'#99ffcc', hp:38,   spd:2.6, ability:'22%の確率で飛来弾を回避する。速射・連鎖系が苦手とする。' },
+  { type:'WARPER',     name:'WARPER',     color:'#ff99ff', hp:70,   spd:1.2, ability:'経路を位相転移でショートカット。射程網の隙間を縫う。' },
+  { type:'SWARMQUEEN', name:'SWARMQUEEN', color:'#33ff77', hp:110,  spd:1.0, ability:'生存中、約2.3秒ごとにSWARMを生産し続ける。放置すれば増殖する。' },
+  { type:'MAGNAR',     name:'MAGNAR',     color:'#ff7744', hp:90,   spd:0.9, ability:'周囲75pxの味方を磁気フィールドで加速させる。先鋒ユニット。' },
+  { type:'BOSS',       name:'OVERDRIVE BOSS', color:'#ffffff', hp:900, spd:0.6, ability:'全バイオームのコアが集約した圧倒的な超大型ユニット。コアへの侵入で大ダメージ。' },
+];
+
 // ── 解放プロトコル（永続アップグレード）──────────────────────
-// 一度解放/強化すると、以後すべての戦闘で永久に効果を発揮する。
 const AUGMENT_TEMPLATES = [
   { id:0, key:'income', name:"INCOME PROTOCOL", short:"収益プロトコル", icon:"⚡",
     desc:"戦闘中、時間経過で自動的にクレジットを獲得できるようになる。",
@@ -105,7 +154,6 @@ const AUGMENT_TEMPLATES = [
   },
 ];
 
-// 現在のレベルからNレベル分の強化に必要な累計コストではなく、次の1レベル分のコストを返す
 function getAugmentUpgradeCost(tmpl, curLv) {
   return Math.round(tmpl.baseCost * Math.pow(tmpl.costMult, curLv));
 }
@@ -123,7 +171,6 @@ function getTowerCost(tmpl) {
 }
 
 const STAGE_TEMPLATES = [
-  // ── 既存ステージ ──────────────────────────────────────────────
   {
     id:0, name:"NEON FOREST",     biome:"forest", diff:"NORMAL", pathId:0,
     gimmick:"植物活性: FREEZERの射程1.3倍", color:"#00ff88",
@@ -139,8 +186,6 @@ const STAGE_TEMPLATES = [
     gimmick:"電力安定: タワー攻撃力1.1倍 / 敵HP1.5倍", color:"#00e8ff",
     waves:10, startMoney:90,  startHp:10
   },
-
-  // ── 新規ステージ ──────────────────────────────────────────────
   {
     id:3, name:"VOID LABYRINTH",  biome:"void",   diff:"HARD",   pathId:1,
     gimmick:"位相歪曲: GHOSTが常時出現 / VORTEXの引力2倍", color:"#cc44ff",
@@ -159,8 +204,6 @@ const STAGE_TEMPLATES = [
     waves:11, startMoney:100, startHp:12,
     desc:"電磁嵐が吹き荒れる次元の頂点。最後の砦を守れ。"
   },
-
-  // ── 増設ステージ ──────────────────────────────────────────────
   {
     id:6, name:"GLACIAL BASTION", biome:"ice",    diff:"HARD",   pathId:4,
     gimmick:"絶対零度: 鈍化無効の重装甲JUGGERNAUTが増加 / FREEZERの射程1.2倍で援護せよ", color:"#66ccff",
@@ -179,8 +222,6 @@ const STAGE_TEMPLATES = [
     waves:12, startMoney:90,  startHp:10,
     desc:"全次元が交錯する特異点。これまでの試練を超えた最終決戦の地。"
   },
-
-  // ── 無限モード ────────────────────────────────────────────────
   {
     id:9, name:"INFINITY PROTOCOL", biome:"infinity", diff:"∞",  pathId:7,
     gimmick:"無限湧き: ウェーブ上限なし。5ウェーブ毎にOVERDRIVEボスが出現し、敵は際限なく強化され続ける。", color:"#ffffff",
@@ -192,7 +233,6 @@ const STAGE_TEMPLATES = [
 
 // ── 複数マップパス定義 ──────────────────────────────────────────
 const ALL_PATHS = [
-  // pathId:0 — オリジナルZ字
   [
     {x:0,   y:140},
     {x:400, y:140},
@@ -201,7 +241,6 @@ const ALL_PATHS = [
     {x:120, y:450},
     {x:800, y:450}
   ],
-  // pathId:1 — 迷宮型S字（より複雑）
   [
     {x:0,   y:80},
     {x:600, y:80},
@@ -212,7 +251,6 @@ const ALL_PATHS = [
     {x:650, y:460},
     {x:0,   y:460}
   ],
-  // pathId:2 — 沼地型C字（広い湾曲／直角ターンのみ）
   [
     {x:0,   y:220},
     {x:180, y:220},
@@ -225,7 +263,6 @@ const ALL_PATHS = [
     {x:300, y:480},
     {x:0,   y:480}
   ],
-  // pathId:3 — 嵐型W字（4折れ）
   [
     {x:0,   y:60},
     {x:260, y:60},
@@ -238,7 +275,6 @@ const ALL_PATHS = [
     {x:650, y:100},
     {x:800, y:100}
   ],
-  // pathId:4 — 氷結型階段状（ジグザグ上昇）
   [
     {x:0,   y:450},
     {x:180, y:450},
@@ -249,7 +285,6 @@ const ALL_PATHS = [
     {x:620, y:60},
     {x:800, y:60}
   ],
-  // pathId:5 — 軌道型リング状（複雑な折り返し）
   [
     {x:0,   y:60},
     {x:220, y:60},
@@ -262,7 +297,6 @@ const ALL_PATHS = [
     {x:580, y:420},
     {x:800, y:420}
   ],
-  // pathId:6 — 特異点型迷宮（最長・最多折れ）
   [
     {x:0,   y:250},
     {x:120, y:250},
@@ -277,7 +311,6 @@ const ALL_PATHS = [
     {x:420, y:460},
     {x:800, y:460}
   ],
-  // pathId:7 — 無限回廊型（連続ジグザグ／エンドレスモード用）
   [
     {x:0,   y:60},
     {x:150, y:60},
