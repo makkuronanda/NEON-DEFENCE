@@ -4,13 +4,15 @@
 
 const playerData = {
   crystals: 600,
-  baseLevels: [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  baseLevels: [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
   unlocked: [0,1],
   party: [0,1],
   stageBestWave: [0,0,0,0,0,0,0,0,0,0],
   stageCleared:  [false,false,false,false,false,false,false,false,false,false],
   augments: [0,0,0,0,0,0],
   enemyKills: {},
+  materials: {},
+  settings: { lightMode:false, effectLevel:'high', autoSkip:false },
   soundEnabled: true
 };
 
@@ -22,10 +24,10 @@ const CHAR_TEMPLATES = [
   { id:0,  name:"BLASTER",   type:"連射型",   rarity:"R",   cost:50,  color:"#00e8ff", range:120, damage:15,  cooldown:20,  max:10, desc:"プラズマを連射。序盤の主力ユニット。" },
   { id:1,  name:"SNIPER",    type:"単体狙撃", rarity:"SR",  cost:130, color:"#ffaa00", range:280, damage:75,  cooldown:85,  max:5,  desc:"超遠距離の高電圧狙撃。貫通弾丸。" },
   { id:2,  name:"FREEZER",   type:"遅延型",   rarity:"R",   cost:70,  color:"#88ccff", range:100, damage:8,   cooldown:35,  max:4,  desc:"絶対零度で敵を鈍化させる。" },
-  { id:3,  name:"TESLA",     type:"全方位",   rarity:"SR",  cost:160, color:"#cc44ff", range:95,  damage:36,  cooldown:42,  max:3,  desc:"周囲全敵に電磁パルス放電。" },
+  { id:3,  name:"TESLA",     type:"全方位",   rarity:"SR",  cost:160, color:"#cc44ff", range:95,  damage:42,  cooldown:42,  max:3,  desc:"周囲全敵に電磁パルス放電。" },
   { id:4,  name:"BOMBER",    type:"爆破型",   rarity:"SR",  cost:110, color:"#ff3355", range:150, damage:90,  cooldown:90,  max:4,  desc:"量子炸裂爆発で広範囲殲滅。" },
-  { id:5,  name:"PHANTOM",   type:"透過型",   rarity:"SSR", cost:200, color:"#ff44cc", range:130, damage:55,  cooldown:30,  max:3,  desc:"シールドを無視した次元貫通弾。" },
-  { id:6,  name:"RAILGUN",   type:"貫通型",   rarity:"SR",  cost:180, color:"#ffd700", range:800, damage:150, cooldown:95,  max:2,  desc:"直線上全敵を貫く超高速レール弾。" },
+  { id:5,  name:"PHANTOM",   type:"透過型",   rarity:"SSR", cost:200, color:"#ff44cc", range:130, damage:60,  cooldown:30,  max:3,  desc:"シールドを無視した次元貫通弾。" },
+  { id:6,  name:"RAILGUN",   type:"貫通型",   rarity:"SR",  cost:180, color:"#ffd700", range:620, damage:100, cooldown:115, max:2,  desc:"直線上の敵を貫く超高速レール弾。命中するごとに威力が減衰する（バランス調整済）。" },
   { id:7,  name:"GUARDIAN",  type:"砦型",     rarity:"SSR", cost:250, color:"#00ff88", range:105, damage:42,  cooldown:15,  max:2,  desc:"高速連射と高耐久を誇る最終守護者。" },
 
   // ── 新規ユニット ──────────────────────────────────────────────
@@ -33,7 +35,7 @@ const CHAR_TEMPLATES = [
     desc:"重力場を生成して敵を引き寄せつつ継続ダメージを与える。",
     special:"vortex"
   },
-  { id:9,  name:"VIRUS",     type:"感染型",   rarity:"SR",  cost:155, color:"#55ff44", range:140, damage:16,  cooldown:45,  max:4,
+  { id:9,  name:"VIRUS",     type:"感染型",   rarity:"SR",  cost:155, color:"#55ff44", range:140, damage:18,  cooldown:45,  max:4,
     desc:"ウイルス弾で敵をDOT感染。感染した敵は毎フレームじわじわHPを削られる。",
     special:"virus"
   },
@@ -41,12 +43,12 @@ const CHAR_TEMPLATES = [
     desc:"連続攻撃でヒートゲージが溜まり、満タンで超火力の熱爆発が炸裂。",
     special:"overload"
   },
-  { id:11, name:"MIRROR",    type:"反射型",   rarity:"R",   cost:80,  color:"#88eeff", range:135, damage:28,  cooldown:30,  max:6,
+  { id:11, name:"MIRROR",    type:"反射型",   rarity:"R",   cost:80,  color:"#88eeff", range:135, damage:34,  cooldown:30,  max:6,
     desc:"弾丸が1回だけ近くの敵に向かってバウンドし2体同時にダメージ。",
     special:"mirror"
   },
-  { id:12, name:"OMEGA",     type:"終末型",   rarity:"SSR", cost:300, color:"#ff2200", range:200, damage:180, cooldown:150, max:1,
-    desc:"OMEGAビームで画面全体の敵を同時に攻撃。最強だが発動間隔が長い。",
+  { id:12, name:"OMEGA",     type:"終末型",   rarity:"SSR", cost:300, color:"#ff2200", range:200, damage:115, cooldown:210, max:1,
+    desc:"OMEGAビームで射程内の敵を同時に攻撃。強力だが発動間隔が長く、ボスへの効果は減衰する（バランス調整済）。",
     special:"omega"
   },
 
@@ -59,12 +61,12 @@ const CHAR_TEMPLATES = [
     desc:"周囲の味方タワーの攻撃力とリロード速度を底上げする支援施設。",
     special:"support"
   },
-  { id:15, name:"PULSAR",    type:"麻痺型",   rarity:"R",   cost:90,  color:"#ff66ff", range:115, damage:14,  cooldown:55,  max:5,
+  { id:15, name:"PULSAR",    type:"麻痺型",   rarity:"R",   cost:90,  color:"#ff66ff", range:115, damage:16,  cooldown:55,  max:5,
     desc:"命中時に高確率で敵を短時間スタンさせる衝撃波。足止けに優れる。",
     special:"stun"
   },
-  { id:16, name:"METEOR",    type:"砲撃型",   rarity:"SSR", cost:260, color:"#ff4400", range:230, damage:150, cooldown:150, max:2,
-    desc:"着弾まで時間差のある大質量弾を撃ち込み、着弾点周辺を壊滅させる超広範囲砲撃。",
+  { id:16, name:"METEOR",    type:"砲撃型",   rarity:"SSR", cost:260, color:"#ff4400", range:230, damage:185, cooldown:125, max:2,
+    desc:"着弾まで時間差のある大質量弾を撃ち込み、着弾点周辺を壊滅させる超広範囲砲撃。強化済: 着弾加速・範囲拡大・LV3で2連撃・燃焼付与。",
     special:"artillery"
   },
 
@@ -93,6 +95,38 @@ const CHAR_TEMPLATES = [
     desc:"三重砲身が同一標的へ3連続射撃。単体に対する溶断性能は全ユニットトップクラス。",
     special:"burst"
   },
+
+  // ── OVERDRIVE V — 宇宙・時間系ユニット ─────────────────────
+  { id:23, name:"SINGULARITY", type:"特異点型", rarity:"SSR", cost:320, color:"#9944ff", range:150, damage:22, cooldown:50, max:2,
+    desc:"標的地点にブラックホールを生成。範囲内の敵を引力で引きずり寄せながら継続ダメージを与える宇宙兵器。",
+    special:"blackhole" },
+  { id:24, name:"QUASAR", type:"宇宙線型", rarity:"SR", cost:170, color:"#00ffee", range:200, damage:45, cooldown:70, max:3,
+    desc:"準恒星の宇宙線を扇状にスイープ。扇状範囲の敵全てに強力な貫通ダメージを与える。",
+    special:"quasar" },
+  { id:25, name:"STARFALL", type:"星降型", rarity:"SR", cost:160, color:"#ffee88", range:180, damage:60, cooldown:85, max:3,
+    desc:"射程内のランダムな敵3体の頭上へ星屑の雨を落とす。時間差で連続着弾する幻想的な砲撃。",
+    special:"starfall" },
+  { id:26, name:"LUX", type:"光矛型", rarity:"R", cost:60, color:"#ffffaa", range:145, damage:24, cooldown:30, max:8,
+    desc:"凝縮された光の矛を放ち、直線上の敵全てを貫通する。低コストで作れる光の壁。",
+    special:"lux" },
+
+  // ── 工房制作ユニット（素材で作れる特別な兵器）──────────────
+  { id:27, name:"ASTRA", type:"銀河砲型", rarity:"SSR", cost:290, color:"#aaddff", range:240, damage:130, cooldown:130, max:2,
+    desc:"銀河の引力を借りた光の砲撃。直撃に星屑の灼熱を纏わせ、周囲にも星雲ダメージを波及させる。",
+    special:"astra",
+    craft:{ stardust:40, voidshard:8, novacore:4 } },
+  { id:28, name:"CHRONO", type:"時計型", rarity:"SSR", cost:230, color:"#ffd700", range:160, damage:6, cooldown:30, max:2,
+    desc:"巨大な時計の針を刻み、範囲内の時間そのものを減速させるフィールドを展開。敵の動きを強制的に鈍らせる。",
+    special:"chrono",
+    craft:{ chronogear:10, quantum:25, voidshard:3 } },
+  { id:29, name:"TEMPUS", type:"時停型", rarity:"SSR", cost:350, color:"#ffffff", range:110, damage:0, cooldown:60, max:1,
+    desc:"設置するとバトルスキル「TIME STOP」が解放。好きなタイミングで敵全体の時間を完全停止させ、自軍だけが動ける時を作る。",
+    special:"timestop",
+    craft:{ chronogear:15, voidshard:10, novacore:5 } },
+  { id:30, name:"NOVA", type:"超新星型", rarity:"SR", cost:190, color:"#ff8844", range:140, damage:30, cooldown:100, max:2,
+    desc:"周期的に超新星爆発を起こし、周囲の敵を灼熱の衝撃波で薙ぎ払う。爆心地は小さな恒星のように輝く。",
+    special:"supernova",
+    craft:{ novacore:5, stardust:20 } },
 ];
 
 const RARITY_COLORS = { R: "#00e8ff", SR: "#cc44ff", SSR: "#ffd700" };
@@ -324,3 +358,42 @@ const ALL_PATHS = [
     {x:800, y:60}
   ]
 ];
+
+
+// ── 素材システム（ステージクリア・ボス撃破で入手）────────────
+const MATERIAL_TEMPLATES = [
+  { id:'stardust',   name:'STARDUST',     nameJp:'星屑',       color:'#88ccff', rarity:'common', desc:'宇宙空間に漂う微細な結晶。様々な兵器の基礎素材。' },
+  { id:'quantum',    name:'QUANTUM DUST', nameJp:'量子の塵',   color:'#00ffcc', rarity:'common', desc:'観測するたび状態が変化する不思議な粒子。' },
+  { id:'voidshard',  name:'VOID SHARD',   nameJp:'虚無の欠片', color:'#cc44ff', rarity:'rare',   desc:'虚無空間の裂け目から回収された破片。強いエネルギーを帯びる。' },
+  { id:'chronogear', name:'CHRONO GEAR',  nameJp:'クロノ歯車', color:'#ffd700', rarity:'rare',   desc:'止まった時間の中から抽出された黄金の歯車。' },
+  { id:'novacore',   name:'NOVA CORE',    nameJp:'ノヴァコア', color:'#ff6600', rarity:'rare',   desc:'超新星爆発の残滓。触れたものを灼熱に包む核。' },
+];
+
+function addMaterial(id, n) {
+  playerData.materials[id] = (playerData.materials[id] || 0) + n;
+}
+function getMaterialCount(id) {
+  return playerData.materials[id] || 0;
+}
+function grantStageMaterials(stage, wavesReached) {
+  const gained = [];
+  const give = (id, n) => { if (n > 0) { addMaterial(id, n); gained.push({ id, n }); } };
+  const scale = stage.endless ? Math.min(3, 1 + Math.floor((wavesReached || 0) / 15)) : 1;
+  give('stardust',  (5 + stage.id * 2) * scale);
+  give('quantum',   (3 + stage.id) * scale);
+  if (Math.random() < 0.45) give('voidshard', 1 + (stage.id >= 5 ? 1 : 0));
+  if (Math.random() < 0.30) give('chronogear', 1);
+  if (Math.random() < 0.28) give('novacore',   1);
+  if (stage.endless && (wavesReached || 0) >= 20) { give('voidshard', 2); give('novacore', 1); }
+  return gained;
+}
+function formatGainedMaterials(gained) {
+  return gained.map(g => {
+    const t = MATERIAL_TEMPLATES.find(m => m.id === g.id);
+    return `${t ? t.nameJp : g.id}×${g.n}`;
+  }).join(' ／ ');
+}
+function canCraftUnit(ch) {
+  if (!ch.craft) return false;
+  return Object.entries(ch.craft).every(([mid, n]) => getMaterialCount(mid) >= n);
+}
