@@ -122,6 +122,8 @@
     <button class="tab-btn" onclick="switchScreen('archive')">ARCHIVE</button>
     <button class="tab-btn" onclick="switchScreen('augment')">PROTOCOL</button>
     <button class="tab-btn" onclick="switchScreen('gacha')">GACHA</button>
+    <button class="tab-btn" onclick="switchScreen('forge')">FORGE</button>
+    <button class="tab-btn" onclick="switchScreen('config')">CONFIG</button>
   </div>
   <div class="header-crystal">CORE CRYSTA <span id="meta-currency">0</span></div>
   <div class="header-auth" id="header-auth">
@@ -152,7 +154,7 @@
     </div>
     <button class="btn-start btn-start-pulse" onclick="switchScreen('stage')">▶ BOOT SYSTEM</button>
   </div>
-  <div class="title-version" id="title-version" onclick="handleVersionTap()">VER. 3.1.0 / BUILD 2026</div>
+  <div class="title-version" id="title-version" onclick="handleVersionTap()">VER. 3.2.0 / BUILD 2026</div>
 </div>
 
 <!-- STAGE -->
@@ -230,6 +232,27 @@
   </div>
 </div>
 
+<!-- FORGE -->
+<div id="screen-forge" class="screen">
+  <div class="screen-content">
+    <div class="screen-title">◈ MATERIAL FORGE — 素材工房</div>
+    <div style="font-size:0.65rem;letter-spacing:1px;color:#557;margin-bottom:14px;line-height:1.6;">
+      ステージクリアやボス撃破で素材を回収し、特別なユニットを制作できる。レア素材は強敵からのみ回収可能。
+    </div>
+    <div class="forge-mats" id="forge-materials"></div>
+    <div style="font-size:0.65rem;letter-spacing:2px;color:#446;margin-bottom:12px;">CRAFTABLE UNITS — 制作可能ユニット</div>
+    <div class="char-grid" id="forge-list"></div>
+  </div>
+</div>
+
+<!-- CONFIG -->
+<div id="screen-config" class="screen">
+  <div class="screen-content" style="max-width:720px;margin:0 auto;width:100%;">
+    <div class="screen-title">◈ SYSTEM CONFIG — 設定</div>
+    <div id="config-list" style="display:flex;flex-direction:column;gap:14px;"></div>
+  </div>
+</div>
+
 <!-- GACHA RESULT OVERLAY -->
 <div id="gacha-overlay">
   <div class="gacha-charge" id="gacha-charge">
@@ -291,6 +314,7 @@
     <div class="hud-stat"><div class="hud-label">WAVE</div><div class="hud-val" id="g-wave" style="color:var(--orange)">1/5</div></div>
     <div style="font-size:0.65rem;letter-spacing:2px;color:var(--cyan)" id="g-gimmick">GIMMICK: —</div>
     <div class="hud-speed-controls">
+      <button class="btn-timestop" id="btn-timestop" onclick="activateTimeStop()" style="display:none">⏱ TIME STOP</button>
       <button class="btn-speed" id="btn-pause" onclick="togglePause()">⏸ PAUSE</button>
       <button class="btn-speed" id="btn-speed-1" onclick="setSpeed(1)">1x</button>
       <button class="btn-speed" id="btn-speed-2" onclick="setSpeed(2)">2x</button>
