@@ -1367,3 +1367,78 @@ header {
   .up-info { width: 100%; }
   .archive-grid { grid-template-columns: 1fr; }
 }
+
+
+/* ============================================================
+   FORGE / CONFIG / TIME STOP（OVERDRIVE V 追加システム）
+   ============================================================ */
+.forge-mats { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:22px; }
+.mat-chip {
+  display:flex; align-items:center; gap:10px;
+  padding:9px 14px; border:1px solid #1a2040; background:rgba(6,8,26,0.85);
+  transition:all 0.2s;
+}
+.mat-chip:hover { border-color:#334466; }
+.mat-icon {
+  width:20px; height:20px; flex-shrink:0;
+  clip-path:polygon(50% 0%,100% 50%,50% 100%,0% 50%);
+}
+.mat-name { font-size:0.68rem; letter-spacing:1px; color:#aab; }
+.mat-count { font-family:var(--font-main); font-size:0.72rem; font-weight:700; }
+.craft-costs { display:flex; flex-wrap:wrap; gap:5px; margin:8px 0; }
+.craft-cost {
+  font-size:0.58rem; letter-spacing:1px; padding:3px 8px;
+  border:1px solid #3a2030; color:#a55;
+}
+.craft-cost.ok { border-color:#1f4030; color:#6c8; }
+.craft-cost b { font-family:var(--font-main); }
+.btn-craft {
+  width:100%; font-family:var(--font-main); font-size:0.65rem; font-weight:700; letter-spacing:2px;
+  background:rgba(255,215,0,0.07); border:1px solid var(--gold); color:var(--gold);
+  padding:8px; cursor:pointer; transition:all 0.2s;
+}
+.btn-craft:hover:not(:disabled) { background:rgba(255,215,0,0.2); box-shadow:0 0 14px rgba(255,215,0,0.35); }
+.btn-craft:disabled { opacity:0.35; cursor:not-allowed; border-color:#2a3050; color:#556; background:transparent; }
+
+.config-row {
+  display:flex; justify-content:space-between; align-items:center; gap:16px;
+  background:rgba(6,8,26,0.85); border:1px solid #1a2040; padding:18px 20px;
+}
+.config-name { font-family:var(--font-main); font-size:0.75rem; font-weight:700; letter-spacing:2px; color:#ccd; }
+.config-desc { font-size:0.65rem; color:#667; line-height:1.6; margin-top:4px; }
+.cfg-toggle {
+  font-family:var(--font-main); font-size:0.7rem; font-weight:700; letter-spacing:2px;
+  background:transparent; border:1px solid #334; color:#556;
+  padding:9px 22px; cursor:pointer; transition:all 0.2s; white-space:nowrap;
+}
+.cfg-toggle.on { border-color:var(--green); color:var(--green); background:rgba(0,255,136,0.08); box-shadow:0 0 12px rgba(0,255,136,0.25); }
+.seg-btns { display:flex; gap:6px; }
+.seg-btn {
+  font-family:var(--font-main); font-size:0.62rem; font-weight:700; letter-spacing:1px;
+  background:transparent; border:1px solid #334; color:#556;
+  padding:8px 16px; cursor:pointer; transition:all 0.2s;
+}
+.seg-btn.active { border-color:var(--cyan); color:var(--cyan); background:rgba(0,245,255,0.08); box-shadow:0 0 12px rgba(0,245,255,0.25); }
+
+.btn-timestop {
+  font-family:var(--font-main); font-size:0.58rem; letter-spacing:1px; font-weight:700;
+  background:rgba(255,215,0,0.08);
+  border:1px solid var(--gold); color:var(--gold);
+  padding:5px 10px; cursor:pointer; transition:all 0.2s;
+  white-space:nowrap;
+}
+.btn-timestop:hover:not(:disabled) { background:rgba(255,215,0,0.22); box-shadow:0 0 14px rgba(255,215,0,0.5); }
+.btn-timestop:disabled { opacity:0.4; cursor:not-allowed; }
+.btn-timestop.active { border-color:#fff; color:#fff; box-shadow:0 0 14px rgba(255,255,255,0.6); animation:pulse-glow 0.8s infinite; }
+
+/* 軽量化モード */
+body.light-mode::after { display:none; }
+body.light-mode .title-scanbeam,
+body.light-mode .hex-particle,
+body.light-mode .loader-scanline,
+body.light-mode .loader-particles { display:none; }
+
+@media (max-width:600px) {
+  .config-row { flex-direction:column; align-items:flex-start; }
+  .forge-mats { gap:8px; }
+}
