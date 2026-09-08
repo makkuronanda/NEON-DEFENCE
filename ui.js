@@ -6,24 +6,224 @@ let gameState = null;
 let animFrameId = null;
 
 // ────────────────────────────────────────────────
+//  DEVELOPER CONSOLE（開発者専用の隠しデバッグ機能）
+//  有効化: タイトル画面のバージョン表記を7回連続タップ、
+//         または URL に ?dev を付けてアクセス（localStorageに保持）
+//  ※FABボタンは表示されない。発見できる要素は残さない。
+// ────────────────────────────────────────────────
+const DEV_MODE_KEY = 'neonDefenseDevMode';
+let devMode = false;
+let devPanelOpen = false;
+let devTapCount = 0;
+let devTapTimer = null;
+
+try {
+  const params = new URLSearchParams(window.location.search);
+  if (params.has('dev') || localStorage.getItem(DEV_MODE_KEY) === '1') devMode = true;
+} catch (e) { /* localStorage/URL unavailable — dev mode simply stays off */ }
+
+function handleVersionTap() {
+  devTapCount++;
+  clearTimeout(devTapTimer);
+  devTapTimer = setTimeout(() => { devTapCount = 0; }, 3000);
+  if (devTapCount >= 7) {
+    devTapCount = 0;
+    clearTimeout(devTapTimer);
+    toggleDevMode();
+  } else if (devTapCount >= 4) {
+    showToast(`DEVELOPER MODEまであと ${7 - devTapCount} 回タップ`);
+  }
+}
+
+function toggleDevMode() {
+  devMode = !devMode;
+  try { localStorage.setItem(DEV_MODE_KEY, devMode ? '1' : '0'); } catch (e) {}
+  applyDevModeUI();
+  showToast(devMode ? '🛠 DEVELOPER MODE ENABLED' : 'DEVELOPER MODE DISABLED');
+}
+
+function applyDevModeUI() {
+  // FABボタンは常に非表示 — 開発者モードでも画面に出さない
+  const fab = document.getElementById('dev-fab');
+  if (fab) fab.style.display = 'none';
+  if (!devMode) {
+    devPanelOpen = false;
+    const overlay = document.getElementById('dev-panel-overlay');
+    if (overlay) overlay.classList.remove('show');
+  }
+}
+applyDevModeUI();
+
+// F9でも開閉できる（開発者用キーボードショートカット）
+window.addEventListener('keydown', e => {
+  if (e.key === 'F9' && devMode) { e.preventDefault(); toggleDevPanel(); }
+});
+
+function toggleDevPanel() {
+  if (!devMode) return;
+  const overlay = document.getElementById('dev-panel-overlay');
+  if (!overlay) return;
+  devPanelOpen = !overlay.classList.contains('show');
+  overlay.classList.toggle('show', devPanelOpen);
+  if (devPanelOpen) renderDevPanel();
+}
+
+function renderDevPanel() {
+  const body = document.getElementById('dev-panel-body');
+  if (!body) return;
+  const inBattle = !!(gameState && gameState.state === 'playing');
+  body.innerHTML = `
+    <div class="dev-section">
+      <div class="dev-section-title">CURRENCY（ガチャ用コア結晶）</div>
+      <div class="dev-btn-row">
+        <button class="dev-btn" onclick="devAddCrystals(1000)">+1,000</button>
+        <button class="dev-btn" onclick="devAddCrystals(10000)">+10,000</button>
+        <button class="dev-btn" onclick="devAddCrystals(100000)">+100,000</button>
+        <button class="dev-btn gold" onclick="devMaxCrystals()">MAX (999,999)</button>
+      </div>
+      <div class="dev-current">現在のコア結晶: <b>${playerData.crystals}</b></div>
+    </div>
+
+    <div class="dev-section">
+      <div class="dev-section-title">PROGRESSION</div>
+      <div class="dev-btn-row">
+        <button class="dev-btn" onclick="devUnlockAllUnits()">全ユニット解放</button>
+        <button class="dev-btn" onclick="devMaxAllBaseLevels()">全ユニットLIMIT BREAK</button>
+        <button class="dev-btn" onclick="devMaxAllAugments()">全プロトコルMAX</button>
+        <button class="dev-btn danger" onclick="devResetStageRecords()">ステージ記録リセット</button>
+      </div>
+    </div>
+
+    <div class="dev-section">
+      <div class="dev-section-title">BATTLE${inBattle ? '' : ' <span class="dev-inactive-tag">戦闘中のみ有効</span>'}</div>
+      <div class="dev-btn-row">
+        <button class="dev-btn" ${inBattle ? '' : 'disabled'} onclick="devAddCredits(1000)">+1,000C</button>
+        <button class="dev-btn" ${inBattle ? '' : 'disabled'} onclick="devAddCredits(10000)">+10,000C</button>
+        <button class="dev-btn" ${inBattle ? '' : 'disabled'} onclick="devSetHP(999)">HP → 999</button>
+        <button class="dev-btn${devState.godMode ? ' active' : ''}" ${inBattle ? '' : 'disabled'} onclick="devToggleGodMode()">GOD MODE: ${devState.godMode ? 'ON' : 'OFF'}</button>
+        <button class="dev-btn" ${inBattle ? '' : 'disabled'} onclick="devKillAllEnemies()">全敵撃破</button>
+        <button class="dev-btn" ${inBattle ? '' : 'disabled'} onclick="devForceNextWave()">次ウェーブへ</button>
+        <button class="dev-btn danger" ${inBattle ? '' : 'disabled'} onclick="devInstantWin()">ステージ即勝利</button>
+      </div>
+    </div>
+
+    <div class="dev-section">
+      <div class="dev-section-title">SAVE DATA</div>
+      <div class="dev-btn-row">
+        <button class="dev-btn" onclick="devExportSave()">セーブをコピー</button>
+        <button class="dev-btn" onclick="devImportSave()">セーブを読込</button>
+        <button class="dev-btn danger" onclick="devResetAllData()">全データ初期化</button>
+      </div>
+    </div>
+  `;
+}
+
+// ── Currency / Progression cheats ──
+function devAddCrystals(amount) {
+  playerData.crystals += amount;
+  updateMeta();
+  if (devPanelOpen) renderDevPanel();
+  autoSave('dev-cheat');
+}
+function devMaxCrystals() {
+  playerData.crystals = 999999;
+  updateMeta();
+  if (devPanelOpen) renderDevPanel();
+  autoSave('dev-cheat');
+}
+function devUnlockAllUnits() {
+  playerData.unlocked = CHAR_TEMPLATES.map(c => c.id);
+  if (document.getElementById('screen-party')?.classList.contains('active')) renderParty();
+  showToast('全ユニットを解放しました');
+  autoSave('dev-cheat');
+}
+function devMaxAllBaseLevels() {
+  playerData.baseLevels = playerData.baseLevels.map(() => 20);
+  if (document.getElementById('screen-party')?.classList.contains('active')) renderParty();
+  showToast('全ユニットをLIMIT BREAKしました');
+  autoSave('dev-cheat');
+}
+function devMaxAllAugments() {
+  AUGMENT_TEMPLATES.forEach((a, idx) => { playerData.augments[idx] = a.maxLv; });
+  if (document.getElementById('screen-augment')?.classList.contains('active')) renderAugments();
+  showToast('全プロトコルを最大解放しました');
+  autoSave('dev-cheat');
+}
+function devResetStageRecords() {
+  if (!confirm("ステージ記録（最高到達ウェーブ／クリア済みフラグ）をすべてリセットしますか？")) return;
+  playerData.stageBestWave = playerData.stageBestWave.map(() => 0);
+  playerData.stageCleared  = playerData.stageCleared.map(() => false);
+  if (document.getElementById('screen-stage')?.classList.contains('active')) renderStages();
+  showToast('ステージ記録をリセットしました');
+  autoSave('dev-cheat');
+}
+
+// ── Save data tools ──
+function devExportSave() {
+  const json = JSON.stringify(serializePlayerData(), null, 2);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(json)
+      .then(() => showToast('セーブデータをクリップボードにコピーしました'))
+      .catch(() => window.prompt('コピーに失敗しました。手動でコピーしてください:', json));
+  } else {
+    window.prompt('セーブデータ(JSON) — コピーしてください:', json);
+  }
+}
+function devImportSave() {
+  const input = window.prompt('セーブデータ(JSON)を貼り付けてください:');
+  if (!input) return;
+  try {
+    const data = JSON.parse(input);
+    applyCloudData(data);
+    autoSave('dev-import');
+    showToast('セーブデータを読み込みました');
+  } catch (e) {
+    alert('JSONの解析に失敗しました: ' + e.message);
+  }
+}
+function devResetAllData() {
+  if (!confirm("本当に全セーブデータを初期化しますか？この操作は取り消せません。")) return;
+  try { localStorage.removeItem(LOCAL_SAVE_KEY); } catch (e) {}
+  playerData.crystals      = 600;
+  playerData.baseLevels    = CHAR_TEMPLATES.map(() => 1);
+  playerData.unlocked      = [0, 1];
+  playerData.party         = [0, 1];
+  playerData.stageBestWave = STAGE_TEMPLATES.map(() => 0);
+  playerData.stageCleared  = STAGE_TEMPLATES.map(() => false);
+  playerData.augments      = AUGMENT_TEMPLATES.map(() => 0);
+  playerData.enemyKills    = {};
+  playerData.soundEnabled  = true;
+  updateMeta();
+  switchScreen('title');
+  showToast('セーブデータを初期化しました');
+}
+
+// ────────────────────────────────────────────────
 //  TITLE
 // ────────────────────────────────────────────────
 function initTitle() {
   const cont = document.getElementById('title-hexagons');
-  if (!cont || cont.children.length > 0) return;
-  for (let i = 0; i < 20; i++) {
-    const h = document.createElement('div');
-    h.className = 'hex-particle';
-    h.style.cssText = `
-      left: ${Math.random() * 100}%;
-      animation-duration: ${8 + Math.random() * 12}s;
-      animation-delay: ${Math.random() * 10}s;
-      width: ${30 + Math.random() * 80}px;
-      height: ${30 + Math.random() * 80}px;
-      border-color: rgba(0,${Math.random()>0.5?245:170},${Math.random()>0.5?255:170},${0.1+Math.random()*0.2});
-    `;
-    cont.appendChild(h);
+  if (cont && cont.children.length === 0) {
+    for (let i = 0; i < 20; i++) {
+      const h = document.createElement('div');
+      h.className = 'hex-particle';
+      h.style.cssText = `
+        left: ${Math.random() * 100}%;
+        animation-duration: ${8 + Math.random() * 12}s;
+        animation-delay: ${Math.random() * 10}s;
+        width: ${30 + Math.random() * 80}px;
+        height: ${30 + Math.random() * 80}px;
+        border-color: rgba(0,${Math.random()>0.5?245:170},${Math.random()>0.5?255:170},${0.1+Math.random()*0.2});
+      `;
+      cont.appendChild(h);
+    }
   }
+  const tsChars = document.getElementById('ts-chars');
+  if (tsChars) tsChars.textContent = CHAR_TEMPLATES.length;
+  const tsStages = document.getElementById('ts-stages');
+  if (tsStages) tsStages.textContent = STAGE_TEMPLATES.length;
+  const tsEnemies = document.getElementById('ts-enemies');
+  if (tsEnemies) tsEnemies.textContent = ENEMY_CATALOG.length;
 }
 
 // ────────────────────────────────────────────────
@@ -44,6 +244,7 @@ function switchScreen(id) {
   if (id === 'party') renderParty();
   if (id === 'augment') renderAugments();
   if (id === 'gacha') syncSoundToggleUI();
+  if (id === 'archive') renderArchive();
   updateMeta();
 }
 
@@ -103,7 +304,7 @@ function renderStages() {
 }
 
 // ────────────────────────────────────────────────
-//  PARTY SCREEN
+//  PARTY SCREEN + UNIT PREVIEW（回転プレビュー）
 // ────────────────────────────────────────────────
 function renderParty() {
   // Slots
@@ -111,7 +312,7 @@ function renderParty() {
   sc.innerHTML = '';
   const maxParty = getMaxPartySize();
   const label = document.getElementById('party-slots-label');
-  if (label) label.textContent = `ACTIVE SLOTS (MAX ${maxParty})`;
+  if (label) label.textContent = `ACTIVE SLOTS (MAX ${maxParty}) — カードをタップしてプレビュー`;
   for (let i = 0; i < maxParty; i++) {
     const cid = playerData.party[i];
     const slot = document.createElement('div');
@@ -125,8 +326,10 @@ function renderParty() {
         <div style="font-family:var(--font-main);font-size:0.7rem;color:${ch.color};letter-spacing:1px;">${ch.name}</div>
         <div style="font-size:0.55rem;color:${rc};">${ch.rarity}</div>
         <div style="font-size:0.6rem;color:#557;">Base LV.${playerData.baseLevels[cid]}</div>
-        <button class="slot-remove" onclick="removeParty(${i})">✕</button>
+        <button class="slot-remove" onclick="event.stopPropagation();removeParty(${i})">✕</button>
       `;
+      slot.style.cursor = 'pointer';
+      slot.onclick = () => openUnitPreview(cid);
     } else {
       slot.innerHTML = `<div style="font-size:0.65rem;letter-spacing:2px;color:#2a3050;">EMPTY</div>`;
     }
@@ -149,14 +352,14 @@ function renderParty() {
           <div class="char-card-name" style="color:${ch.color};">${ch.name}</div>
           <div style="font-family:var(--font-main);font-size:0.6rem;color:${rc};">${ch.rarity}</div>
         </div>
-        <div class="char-card-type" style="color:${rc};">${ch.type}</div>
+        <div class="char-card-type" style="color:${rc};">${ch.type}${equipped ? ' — EQUIPPED' : ''}</div>
         <div class="char-card-stats">
           <div>ATK ${ch.damage}</div><div>RNG ${ch.range}</div>
           <div>CD ${ch.cooldown}</div><div>LV.${playerData.baseLevels[ch.id]}</div>
         </div>
         <div class="char-card-desc">${ch.desc}</div>
       `;
-      card.onclick = () => addParty(ch.id);
+      card.onclick = () => openUnitPreview(ch.id);
     } else {
       card.innerHTML = `
         <div class="char-card-name" style="color:#223;">??????</div>
@@ -181,6 +384,295 @@ function removeParty(i) {
   playerData.party.splice(i, 1);
   renderParty();
   autoSave('party-remove');
+}
+
+function removePartyById(id) {
+  const i = playerData.party.indexOf(id);
+  if (i >= 0) { playerData.party.splice(i, 1); autoSave('party-remove'); }
+}
+
+// ── ユニット回転プレビュー ────────────────────────────────────
+let unitPreviewRAF  = null;
+let unitPreviewAngle = 0;
+let unitPreviewTmpl  = null;
+let unitPreviewId    = null;
+
+function openUnitPreview(id) {
+  const ch = CHAR_TEMPLATES[id];
+  if (!ch || !playerData.unlocked.includes(id)) return;
+  unitPreviewTmpl = ch;
+  unitPreviewId   = id;
+  unitPreviewAngle = 0;
+
+  const ov = document.getElementById('unit-preview-overlay');
+  ov.classList.add('show');
+
+  const rc = RARITY_COLORS[ch.rarity] || '#00e8ff';
+  const maxParty = getMaxPartySize();
+  const equipped = playerData.party.includes(id);
+  const full = playerData.party.length >= maxParty;
+
+  document.getElementById('up-name').textContent = ch.name;
+  document.getElementById('up-name').style.color = ch.color;
+  document.getElementById('up-name').style.textShadow = `0 0 16px ${ch.color}`;
+  document.getElementById('up-rarity').textContent = `${'★'.repeat(ch.rarity==='SSR'?3:ch.rarity==='SR'?2:1)} ${ch.rarity}`;
+  document.getElementById('up-rarity').style.color = rc;
+  document.getElementById('up-type').textContent = ch.type;
+  document.getElementById('up-desc').textContent = ch.desc;
+  document.getElementById('up-stats').innerHTML = `
+    <div class="up-stat"><span>ATK</span><b>${ch.damage}</b></div>
+    <div class="up-stat"><span>RNG</span><b>${ch.range}</b></div>
+    <div class="up-stat"><span>CD</span><b>${ch.cooldown}</b></div>
+    <div class="up-stat"><span>COST</span><b>${getTowerCost(ch)}C</b></div>
+    <div class="up-stat"><span>MAX</span><b>${ch.max}</b></div>
+    <div class="up-stat"><span>BASE LV</span><b>${playerData.baseLevels[id]}</b></div>
+  `;
+
+  const btn = document.getElementById('up-equip-btn');
+  btn.textContent = equipped ? '◈ REMOVE FROM PARTY' : (full ? '◈ EQUIP（最古枠と入替）' : '◈ EQUIP');
+  btn.onclick = () => {
+    if (equipped) removePartyById(id);
+    else addParty(id);
+    closeUnitPreview();
+    renderParty();
+  };
+
+  if (unitPreviewRAF) cancelAnimationFrame(unitPreviewRAF);
+  unitPreviewLoop();
+}
+
+function closeUnitPreview() {
+  if (unitPreviewRAF) cancelAnimationFrame(unitPreviewRAF);
+  unitPreviewRAF = null;
+  document.getElementById('unit-preview-overlay').classList.remove('show');
+}
+
+function unitPreviewLoop() {
+  const cv = document.getElementById('unit-preview-canvas');
+  if (!cv || !unitPreviewTmpl) return;
+  const c2 = cv.getContext('2d');
+  unitPreviewAngle += 0.02;
+  drawUnitPreview(c2, unitPreviewTmpl, unitPreviewAngle);
+  unitPreviewRAF = requestAnimationFrame(unitPreviewLoop);
+}
+
+// タレットを回転させながら描画するプレビューレンダラ
+function drawUnitPreview(c2, tmpl, angle) {
+  const W = 280, H = 280, cx = W/2, cy = H/2;
+  c2.clearRect(0, 0, W, H);
+
+  // 背景グリッド
+  c2.save();
+  c2.strokeStyle = 'rgba(0,245,255,0.05)';
+  c2.lineWidth = 1;
+  for (let i = 0; i <= W; i += 28) { c2.beginPath(); c2.moveTo(i, 0); c2.lineTo(i, H); c2.stroke(); }
+  for (let i = 0; i <= H; i += 28) { c2.beginPath(); c2.moveTo(0, i); c2.lineTo(W, i); c2.stroke(); }
+  c2.restore();
+
+  // プラットフォーム
+  c2.save();
+  c2.translate(cx, cy);
+  const g = c2.createRadialGradient(0, 0, 10, 0, 0, 120);
+  g.addColorStop(0, 'rgba(20,30,60,0.9)');
+  g.addColorStop(1, 'rgba(4,6,20,0)');
+  c2.fillStyle = g;
+  c2.beginPath(); c2.arc(0, 0, 120, 0, Math.PI*2); c2.fill();
+
+  c2.strokeStyle = tmpl.color + '44';
+  c2.lineWidth = 1;
+  c2.setLineDash([4, 6]);
+  c2.beginPath(); c2.arc(0, 0, 95, 0, Math.PI*2); c2.stroke();
+  c2.setLineDash([]);
+  // 外環コースター回転
+  c2.save();
+  c2.rotate(-angle * 0.5);
+  c2.strokeStyle = tmpl.color + '33';
+  for (let i = 0; i < 4; i++) {
+    const a = Math.PI/2 * i;
+    c2.beginPath(); c2.arc(0, 0, 110, a, a + 0.5); c2.stroke();
+  }
+  c2.restore();
+  c2.restore();
+
+  // 本体（回転）
+  c2.save();
+  c2.translate(cx, cy);
+  c2.rotate(angle);
+  c2.shadowBlur = 24;
+  c2.shadowColor = tmpl.color;
+  c2.fillStyle = 'rgba(4,6,24,0.95)';
+  c2.strokeStyle = tmpl.color;
+  c2.lineWidth = 2;
+  drawPreviewShape(c2, tmpl.id, tmpl, angle);
+  c2.restore();
+
+  // バレル（逆方向にゆっくり回す＆上下にスライド）
+  c2.save();
+  c2.translate(cx, cy);
+  c2.rotate(-angle * 0.6);
+  c2.fillStyle = 'rgba(200,220,255,0.9)';
+  c2.shadowBlur = 10; c2.shadowColor = tmpl.color;
+  const bw = 7, bl = 26 + Math.sin(angle * 2) * 4;
+  c2.fillRect(8, -bw/2, bl, bw);
+  c2.fillStyle = tmpl.color;
+  c2.fillRect(8 + bl - 4, -bw/2 - 1, 5, bw + 2);
+  c2.restore();
+
+  // マーカー
+  c2.save();
+  c2.fillStyle = tmpl.color;
+  c2.globalAlpha = 0.9;
+  const ma = angle * 1.4;
+  c2.beginPath();
+  c2.arc(cx + Math.cos(ma)*95, cy + Math.sin(ma)*95, 3, 0, Math.PI*2);
+  c2.fill();
+  c2.restore();
+}
+
+// プレビュー用ボディ形状（game.js の drawShape と同系統の簡易版）
+function drawPreviewShape(c2, id, tmpl, angle) {
+  const S = (fn) => { fn(); };
+  if (id===0||id===4||id===7||id===10) {
+    c2.fillRect(-16,-16,32,32); c2.strokeRect(-16,-16,32,32);
+    if (id===10) { c2.save(); c2.rotate(Math.PI/4); c2.strokeRect(-12,-12,24,24); c2.restore(); }
+  } else if (id===1||id===5) {
+    c2.beginPath(); c2.moveTo(0,-18); c2.lineTo(17,14); c2.lineTo(-17,14); c2.closePath(); c2.fill(); c2.stroke();
+  } else if (id===2||id===11) {
+    c2.beginPath(); c2.moveTo(0,-18); c2.lineTo(18,0); c2.lineTo(0,18); c2.lineTo(-18,0); c2.closePath(); c2.fill(); c2.stroke();
+    if (id===11) { c2.beginPath(); c2.moveTo(-12,0); c2.lineTo(12,0); c2.stroke(); }
+  } else if (id===3) {
+    c2.beginPath(); c2.arc(0,0,16,0,Math.PI*2); c2.fill(); c2.stroke();
+    c2.strokeRect(-8,-8,16,16);
+  } else if (id===6) {
+    c2.beginPath(); c2.moveTo(-6,-19); c2.lineTo(6,-19); c2.lineTo(10,19); c2.lineTo(-10,19); c2.closePath(); c2.fill(); c2.stroke();
+  } else if (id===8) {
+    c2.beginPath(); c2.arc(0,0,16,0,Math.PI*2); c2.fill(); c2.stroke();
+    for (let i = 0; i < 3; i++) {
+      const a = Math.PI*2/3*i + angle;
+      c2.beginPath(); c2.moveTo(0,0); c2.lineTo(Math.cos(a)*16, Math.sin(a)*16); c2.stroke();
+    }
+  } else if (id===9) {
+    c2.beginPath(); c2.arc(0,0,10,0,Math.PI*2); c2.fill(); c2.stroke();
+    for (let i = 0; i < 3; i++) {
+      const a = Math.PI*2/3*i;
+      c2.beginPath(); c2.arc(Math.cos(a)*14, Math.sin(a)*14, 6, 0, Math.PI*2); c2.fill(); c2.stroke();
+    }
+  } else if (id===12) {
+    c2.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const a = Math.PI/4*i;
+      const r = i%2===0 ? 18 : 9;
+      c2[i===0?'moveTo':'lineTo'](Math.cos(a)*r, Math.sin(a)*r);
+    }
+    c2.closePath(); c2.fill(); c2.stroke();
+  } else if (id===13) {
+    c2.beginPath(); c2.arc(0,0,15,0,Math.PI*2); c2.fill(); c2.stroke();
+    c2.lineWidth = 2.5;
+    c2.beginPath(); c2.moveTo(-4,-13); c2.lineTo(5,-3); c2.lineTo(-3,0); c2.lineTo(4,13); c2.stroke();
+  } else if (id===14) {
+    c2.beginPath(); c2.moveTo(0,-18); c2.lineTo(11,12); c2.lineTo(-11,12); c2.closePath(); c2.fill(); c2.stroke();
+    c2.setLineDash([2,3]);
+    c2.beginPath(); c2.arc(0,-5, 5 + (Math.abs(Math.sin(angle*3))*6), 0, Math.PI*2); c2.stroke();
+    c2.setLineDash([]);
+  } else if (id===15) {
+    c2.beginPath(); c2.arc(0,0,9,0,Math.PI*2); c2.fill(); c2.stroke();
+    for (let i = 1; i <= 2; i++) {
+      c2.beginPath(); c2.arc(0,0, 9+i*7+Math.sin(angle*2+i)*2, 0, Math.PI*2); c2.stroke();
+    }
+  } else if (id===16) {
+    c2.beginPath();
+    c2.moveTo(0,-19); c2.lineTo(12,5); c2.lineTo(5,5); c2.lineTo(7,17);
+    c2.lineTo(-7,17); c2.lineTo(-5,5); c2.lineTo(-12,5);
+    c2.closePath(); c2.fill(); c2.stroke();
+  } else if (id===17) {
+    c2.fillRect(-17,-15,34,30); c2.strokeRect(-17,-15,34,30);
+    c2.fillStyle = tmpl.color;
+    c2.fillRect(-11,-5,8,10); c2.fillRect(3,-5,8,10);
+  } else if (id===18) {
+    c2.beginPath();
+    for (let i = 0; i < 6; i++) { const a = Math.PI/3*i; c2.lineTo(Math.cos(a)*17, Math.sin(a)*17); }
+    c2.closePath(); c2.fill(); c2.stroke();
+    c2.lineWidth = 2;
+    c2.beginPath(); c2.moveTo(-7,-7); c2.lineTo(7,7); c2.moveTo(7,-7); c2.lineTo(-7,7); c2.stroke();
+  } else if (id===19) {
+    c2.beginPath();
+    c2.moveTo(-14,-12); c2.lineTo(3,0); c2.lineTo(-14,12);
+    c2.moveTo(-5,-12); c2.lineTo(12,0); c2.lineTo(-5,12);
+    c2.stroke();
+    c2.beginPath(); c2.arc(0,0,10,0,Math.PI*2); c2.fill(); c2.stroke();
+  } else if (id===20) {
+    c2.beginPath();
+    c2.moveTo(0,-18); c2.lineTo(14,-10); c2.lineTo(14,5);
+    c2.quadraticCurveTo(14,14, 0,19);
+    c2.quadraticCurveTo(-14,14, -14,5);
+    c2.lineTo(-14,-10); c2.closePath(); c2.fill(); c2.stroke();
+    c2.beginPath(); c2.moveTo(0,-10); c2.lineTo(0,10); c2.stroke();
+    c2.beginPath(); c2.arc(0,3,5,0,Math.PI*2); c2.stroke();
+  } else if (id===21) {
+    c2.beginPath(); c2.arc(0,0,13,0,Math.PI*2); c2.fill(); c2.stroke();
+    for (let i = 0; i < 8; i++) {
+      const a = Math.PI/4*i + angle*0.5;
+      c2.beginPath();
+      c2.moveTo(Math.cos(a)*15, Math.sin(a)*15);
+      c2.lineTo(Math.cos(a)*22, Math.sin(a)*22);
+      c2.stroke();
+    }
+  } else if (id===22) {
+    for (let k = 0; k < 3; k++) {
+      c2.save();
+      c2.rotate(k * Math.PI*2/3 + angle*0.3);
+      c2.beginPath(); c2.moveTo(0,-17); c2.lineTo(10,7); c2.lineTo(-10,7); c2.closePath();
+      c2.globalAlpha = 0.75; c2.stroke();
+      c2.restore();
+    }
+    c2.beginPath(); c2.arc(0,0,6,0,Math.PI*2); c2.fill();
+  }
+}
+
+// ────────────────────────────────────────────────
+//  ARCHIVE SCREEN（敵アーカイブ / 図鑑）
+// ────────────────────────────────────────────────
+function renderArchive() {
+  const c = document.getElementById('archive-list');
+  if (!c) return;
+  c.innerHTML = '';
+  const kills = playerData.enemyKills || {};
+  const totalKills = Object.values(kills).reduce((a, b) => a + b, 0);
+  const totalEl = document.getElementById('archive-total');
+  if (totalEl) totalEl.textContent = `TOTAL KILLS: ${totalKills}`;
+
+  const analyzed = ENEMY_CATALOG.filter(en => (kills[en.type] || 0) > 0).length;
+  const progressEl = document.getElementById('archive-progress');
+  if (progressEl) progressEl.textContent = `ANALYZED: ${analyzed}/${ENEMY_CATALOG.length}`;
+
+  ENEMY_CATALOG.forEach(en => {
+    const k = kills[en.type] || 0;
+    const unlocked = k > 0;
+    const card = document.createElement('div');
+    card.className = 'archive-card' + (unlocked ? ' unlocked' : '');
+    if (!unlocked) card.classList.add('unknown');
+    card.innerHTML = `
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+        <div class="archive-icon" style="border-color:${unlocked ? en.color : '#223'};color:${unlocked ? en.color : '#223'};box-shadow:${unlocked ? `0 0 14px ${en.color}44` : 'none'};">
+          ${unlocked ? en.name[0] : '?'}
+        </div>
+        <div style="flex:1;">
+          <div class="archive-name" style="color:${unlocked ? en.color : '#334'};">${unlocked ? en.name : 'UNKNOWN SIGNAL'}</div>
+          <div style="font-size:0.55rem;letter-spacing:2px;color:#445;">${unlocked ? en.type : 'UNANALYZED'}</div>
+        </div>
+        <div class="archive-kills" style="color:${unlocked ? '#ffd700' : '#334'};">
+          <div style="font-family:var(--font-main);font-size:1rem;font-weight:900;">${unlocked ? k.toLocaleString() : '—'}</div>
+          <div style="font-size:0.5rem;letter-spacing:2px;color:#445;">KILLS</div>
+        </div>
+      </div>
+      <div class="archive-stats">
+        <div>HP <b>${unlocked ? en.hp : '?'}</b></div>
+        <div>SPD <b>${unlocked ? en.spd : '?'}</b></div>
+      </div>
+      <div class="archive-ability">${unlocked ? en.ability : 'まだ撃破したことがない敵。初めて撃破すると解析データが復元される。'}</div>
+    `;
+    c.appendChild(card);
+  });
 }
 
 // ────────────────────────────────────────────────
@@ -326,17 +818,15 @@ function rollGacha(count) {
   autoSave('gacha');
 }
 
-// ── 演出シーケンス：チャージ → フラッシュ／衝撃波 → (SSR時)スポットライト → カード開封 ──
 function playGachaSequence(results) {
   const overlay     = document.getElementById('gacha-overlay');
   const chargeLabel = document.getElementById('gacha-charge-label');
   const closeBtn    = document.getElementById('gacha-close-btn');
-  if (!overlay) { revealResults(results); return; } // defensive fallback
+  if (!overlay) { revealResults(results); return; }
 
   const bestRarity = results.some(r => r.ch.rarity === 'SSR') ? 'SSR'
                     : results.some(r => r.ch.rarity === 'SR')  ? 'SR' : 'R';
 
-  // reset overlay to a clean charging state (force reflow so repeated rolls replay animations)
   overlay.classList.remove('show', 'phase-charge', 'phase-flash', 'phase-spotlight', 'phase-reveal', 'shaking');
   void overlay.offsetWidth;
   overlay.classList.add('show', 'phase-charge');
@@ -447,7 +937,6 @@ function spawnGachaStar(container, colors, big) {
   container.appendChild(s);
 }
 
-// ── 結果カードの本開封（3Dフリップ演出 + レアリティ集計）──
 function revealResults(results) {
   const container = document.getElementById('gacha-multi-results');
   const starsEl    = document.getElementById('gacha-stars');
@@ -489,14 +978,12 @@ function revealResults(results) {
     setTimeout(() => playGachaTick(), idx * 150 + 300);
   });
 
-  // Beam
   const beam = document.createElement('div');
   beam.className = 'gacha-result-beam';
   beam.style.background = `linear-gradient(180deg,transparent,${results[0].ch.color},transparent)`;
   document.getElementById('gacha-result-bg').innerHTML = '';
   document.getElementById('gacha-result-bg').appendChild(beam);
 
-  // 10連の場合はレアリティ内訳を表示
   const tally = document.getElementById('gacha-tally');
   if (tally) {
     if (results.length > 1) {
@@ -522,16 +1009,10 @@ function closeGachaOverlay() {
 
 // ════════════════════════════════════════════════════════════
 //  SAVE / LOAD  ─  LOCAL  +  CLOUD
-//
-//  [ゲスト]   autoSave → localStorage のみ
-//  [ログイン] autoSave → localStorage + Firestore
-//  [ログイン時] loadFromCloud が呼ばれ、
-//              ゲストデータとクラウドデータを比較・選択
 // ════════════════════════════════════════════════════════════
 
 const LOCAL_SAVE_KEY = 'neonDefenseSave';
 
-// ── Toast ─────────────────────────────────────────────────────
 function showToast(msg, isError = false) {
   let t = document.getElementById('save-toast');
   if (!t) {
@@ -546,7 +1027,6 @@ function showToast(msg, isError = false) {
   t._tid = setTimeout(() => t.classList.remove('show'), 2800);
 }
 
-// ── Serialize ────────────────────────────────────────────────
 function serializePlayerData() {
   return {
     crystals:   playerData.crystals,
@@ -556,18 +1036,17 @@ function serializePlayerData() {
     stageBestWave: [...playerData.stageBestWave],
     stageCleared:  [...playerData.stageCleared],
     augments:      [...playerData.augments],
+    enemyKills:    Object.assign({}, playerData.enemyKills),
     soundEnabled:  playerData.soundEnabled,
     savedAt:    new Date().toISOString()
   };
 }
 
-// ── Apply saved snapshot → playerData ────────────────────────
 function applyCloudData(data) {
   if (!data) return;
   if (typeof data.crystals === 'number')  playerData.crystals   = data.crystals;
   if (Array.isArray(data.baseLevels)) {
     playerData.baseLevels = [...data.baseLevels];
-    // 新キャラ追加後のセーブデータへ対応
     while (playerData.baseLevels.length < CHAR_TEMPLATES.length)
       playerData.baseLevels.push(1);
   }
@@ -585,8 +1064,10 @@ function applyCloudData(data) {
     playerData.augments = [...data.augments];
     while (playerData.augments.length < AUGMENT_TEMPLATES.length) playerData.augments.push(0);
   }
+  if (data.enemyKills && typeof data.enemyKills === 'object') {
+    playerData.enemyKills = Object.assign({}, data.enemyKills);
+  }
   if (typeof data.soundEnabled === 'boolean') playerData.soundEnabled = data.soundEnabled;
-  // SQUAD EXPANSION未解放時にパーティー人数が上限を超えている場合は切り詰める
   const maxParty = getMaxPartySize();
   if (playerData.party.length > maxParty) playerData.party = playerData.party.slice(0, maxParty);
   updateMeta();
@@ -595,16 +1076,15 @@ function applyCloudData(data) {
   if (activeId === 'screen-stage') renderStages();
   if (activeId === 'screen-augment') renderAugments();
   if (activeId === 'screen-gacha') syncSoundToggleUI();
+  if (activeId === 'screen-archive') renderArchive();
 }
 
-// ── ローカル保存（全員共通）──────────────────────────────────
 function saveLocal() {
   try {
     localStorage.setItem(LOCAL_SAVE_KEY, JSON.stringify(serializePlayerData()));
   } catch(e) { console.warn('[LocalSave] 失敗:', e); }
 }
 
-// ── ローカルデータ取得 ───────────────────────────────────────
 function getLocalData() {
   try {
     const raw = localStorage.getItem(LOCAL_SAVE_KEY);
@@ -612,17 +1092,15 @@ function getLocalData() {
   } catch(_) { return null; }
 }
 
-// ── ゲストプレイの痕跡があるか ───────────────────────────────
-// 初期値と同じなら「何もしていない」とみなしてダイアログを出さない
 function hasGuestProgress(data) {
   if (!data) return false;
   if (data.crystals !== 600)                                   return true;
   if ((data.unlocked?.length  ?? 0) > 2)                      return true;
   if ((data.baseLevels ?? []).some((lv, i) => i > 1 && lv > 1)) return true;
+  if (data.enemyKills && Object.keys(data.enemyKills).length > 0) return true;
   return false;
 }
 
-// ── 起動時にローカルデータを適用（loader.js から呼び出す）────
 window.applyLocalSaveOnBoot = function() {
   const local = getLocalData();
   if (local) applyCloudData(local);
@@ -751,7 +1229,6 @@ function showMigrateDialog(uid, localData, cloudData) {
 
     document.body.appendChild(wrap);
 
-    // ── ローカルを選択：クラウドへ移行して適用 ──────────────
     document.getElementById('_mg-btn-local').onclick = async () => {
       wrap.remove();
       try {
@@ -762,16 +1239,15 @@ function showMigrateDialog(uid, localData, cloudData) {
         showToast('ローカルデータをクラウドに移行しました ✓');
       } catch(e) {
         showToast('移行に失敗しました: ' + e.message, true);
-        applyCloudData(localData); // 失敗してもローカルは活かす
+        applyCloudData(localData);
       }
       resolve('local');
     };
 
-    // ── クラウドを選択：ローカルを上書き ────────────────────
     document.getElementById('_mg-btn-cloud').onclick = () => {
       wrap.remove();
       applyCloudData(cloudData);
-      saveLocal(); // クラウドデータをローカルにも書き込む
+      saveLocal();
       showToast('クラウドデータを読み込みました');
       resolve('cloud');
     };
@@ -782,7 +1258,6 @@ function showMigrateDialog(uid, localData, cloudData) {
 //  GOOGLE AUTH & CLOUD SAVE
 // ════════════════════════════════════════════════════════════
 
-// ── Auth state callback（Firebase module から呼ばれる）──────
 window.onAuthChanged = function(user) {
   const btn      = document.getElementById('auth-btn');
   const saveWrap = document.getElementById('auth-save-wrap');
@@ -797,7 +1272,6 @@ window.onAuthChanged = function(user) {
     saveWrap.style.display = 'flex';
     userName.textContent   = user.displayName || user.email || 'USER';
 
-    // ログイン時：ローカル vs クラウドを照合
     loadFromCloud(user.uid);
     startAutoSaveInterval();
   } else {
@@ -810,7 +1284,6 @@ window.onAuthChanged = function(user) {
   }
 };
 
-// ── Login / Logout button ────────────────────────────────────
 window.handleAuthBtn = function() {
   if (window._currentUser) {
     window._googleLogout();
@@ -823,7 +1296,6 @@ window.handleAuthBtn = function() {
   }
 };
 
-// ── 手動 Save ─────────────────────────────────────────────────
 window.saveToCloud = async function() {
   const user = window._currentUser;
   if (!user) { showToast('ログインが必要です', true); return; }
@@ -851,16 +1323,11 @@ window.saveToCloud = async function() {
   }
 };
 
-// ── Auto-save ─────────────────────────────────────────────────
-// ① 常にローカルへ保存（ゲスト・ログイン問わず）
-// ② ログイン中ならクラウドにも保存
 let _autoSaveTimer = null;
 
 async function autoSave(reason) {
-  // ① ローカル保存（常時）
   saveLocal();
 
-  // ② クラウド保存（ログイン時のみ）
   const user = window._currentUser;
   if (!user || typeof window._saveData !== 'function') return;
   try {
@@ -889,9 +1356,8 @@ function stopAutoSaveInterval() {
   clearInterval(_autoSaveTimer);
 }
 
-// ページを離れる / タブを隠す際にも保存
 window.addEventListener('beforeunload', () => {
-  saveLocal(); // ゲスト含む全員
+  saveLocal();
   if (!window._currentUser || typeof window._saveData !== 'function') return;
   try { window._saveData(window._currentUser.uid, serializePlayerData()); } catch(_) {}
 });
@@ -900,7 +1366,6 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') autoSave('tab-hidden');
 });
 
-// ── Load from Firestore（ログイン直後に呼ばれる）────────────
 async function loadFromCloud(uid) {
   if (typeof window._loadData !== 'function') return;
   try {
@@ -908,10 +1373,8 @@ async function loadFromCloud(uid) {
     const localData = getLocalData();
     const guestHasProgress = hasGuestProgress(localData);
 
-    // ── Case A: クラウドにデータなし ──────────────────────
     if (!cloudData) {
       if (guestHasProgress) {
-        // ゲストデータを自動でクラウドへ移行（確認不要）
         const payload = { ...localData, savedAt: new Date().toISOString() };
         await window._saveData(uid, payload);
         applyCloudData(payload);
@@ -923,12 +1386,9 @@ async function loadFromCloud(uid) {
       return;
     }
 
-    // ── Case B: クラウドにデータあり ──────────────────────
     if (guestHasProgress) {
-      // ゲストプレイのデータがある → ダイアログで選ばせる
       await showMigrateDialog(uid, localData, cloudData);
     } else {
-      // ゲストプレイなし → クラウドをそのまま適用
       applyCloudData(cloudData);
       saveLocal();
       const d = new Date(cloudData.savedAt);
