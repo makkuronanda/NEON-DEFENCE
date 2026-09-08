@@ -24,7 +24,7 @@
   // ── Progress simulation ──
   const STEPS = [
     { pct: 5,  label: "CORE CRYSTAL MATRICES ONLINE...",        delay: 260 },
-    { pct: 12, label: "LOADING UNIT ARCHIVES [17 UNITS]...",    delay: 240 },
+    { pct: 12, label: "LOADING UNIT ARCHIVES [23 UNITS]...",    delay: 240 },
     { pct: 20, label: "CALIBRATING DEFENSE GRID...",            delay: 260 },
     { pct: 28, label: "SYNCING BATTLE TOPOLOGIES [7 PATHS]...", delay: 280 },
     { pct: 36, label: "DECRYPTING ENEMY SIGNATURES...",         delay: 240 },
