@@ -1,7 +1,3 @@
-/* ============================================================
-   NEON DEFENSE: OVERDRIVE III — game.js
-   ============================================================ */
-
 const canvas = document.getElementById('gameCanvas');
 const ctx    = canvas.getContext('2d');
 const GS     = 40;
@@ -24,9 +20,12 @@ function startBattle(stageData) {
   battlePath = ALL_PATHS[stageData.pathId ?? 0].map(p => ({...p}));
   buildPathCells();
 
+  const startHp = (stageData.startHp || 20) + getAugmentLevel('fortify') * 2;
+
   gameState = {
     state: 'playing', stage: stageData,
-    hp: (stageData.startHp || 20) + getAugmentLevel('fortify') * 2,
+    hp: startHp,
+    maxHp: startHp,
     money: (stageData.startMoney || 150) + getAugmentLevel('capital') * 25,
     wave: 1, frame: 0,
     enemies: [], towers: [], projectiles: [],
@@ -123,6 +122,8 @@ function updateGameUI() {
     const heatBar = t.heat != null
       ? `<div style="font-size:0.6rem;color:#ff8800;margin-top:2px;">HEAT: ${'▮'.repeat(Math.floor(t.heat/20))}${'▯'.repeat(5-Math.floor(t.heat/20))} ${Math.floor(t.heat)}%</div>`
       : '';
+    const specialNote = t.tmpl.special === 'repair'
+      ? `<div style="font-size:0.58rem;color:#00ff88;margin-top:2px;">NEXT REPAIR: ${Math.ceil(t.cd/60)}s</div>` : '';
     panel.innerHTML = `
       <div style="line-height:1.5;font-size:0.72rem;">
         <span style="font-family:var(--font-main);color:${t.tmpl.color}">${t.tmpl.name}</span>
@@ -130,7 +131,7 @@ function updateGameUI() {
         ATK:<span style="color:var(--green)"> ${Math.floor(t.getDamage())}</span>　
         RNG: <span style="color:#aab">${Math.floor(t.getRange())}</span>
       </div>
-      ${heatBar}
+      ${heatBar}${specialNote}
       <div style="display:flex;gap:6px;align-items:center;">
         <button class="btn-evolve" onclick="upgradeTower()" ${(atMax || gameState.money < uc) ? 'disabled' : ''}>${atMax ? 'MAX' : 'EVOLVE ' + uc + 'C'}</button>
         <button class="btn-sell" onclick="sellTower()">SELL ${sellAmt}C</button>
@@ -141,14 +142,17 @@ function updateGameUI() {
       </div>
     `;
   } else {
-    panel.innerHTML = `<span style="color:#446;font-size:0.65rem;letter-spacing:1px;">タップしてタワー配置 / タワーをタップで選択・強化</span>`;
+    panel.innerHTML = `<span style="color:#446;font-size:0.65rem;letter-spacing:1px;">タップしてタワー配置 / タワーをタップで選択・強化（もう一度タップで解除）</span>`;
   }
 
   if (gameState.hp <= 0 && gameState.state === 'playing') {
-    if (getAugmentLevel('reserves') > 0 && !gameState.usedRevive) {
+    if (typeof devState !== 'undefined' && devState.godMode) {
+      // [DEV] GOD MODE — インテグリティを1未満に下げない
+      gameState.hp = Math.max(gameState.hp, 1);
+    } else if (getAugmentLevel('reserves') > 0 && !gameState.usedRevive) {
       // OVERDRIVE RESERVES — 1バトルにつき1回だけ致命的な一撃を回避する
       gameState.usedRevive = true;
-      gameState.hp = Math.max(3, Math.ceil(((gameState.stage.startHp || 20) + getAugmentLevel('fortify') * 2) * 0.3));
+      gameState.hp = Math.max(3, Math.ceil(gameState.maxHp * 0.3));
       gameState.floatingTexts.push(new FloatText(canvas.width/2, canvas.height/2, '⚡ RESERVES ACTIVATED ⚡', '#ffd700'));
       gameState.screenShake = 20;
     } else {
@@ -177,6 +181,7 @@ function updateGameUI() {
   }
 
   updateSpeedControlsUI();
+  if (typeof devPanelOpen !== 'undefined' && devPanelOpen && typeof renderDevPanel === 'function') renderDevPanel();
 }
 
 // ── ステージ記録（最高到達ウェーブ / クリア済みフラグ）を更新 ──
@@ -185,6 +190,7 @@ function recordStageResult(wavesReached, cleared) {
   if (playerData.stageBestWave[id] == null) playerData.stageBestWave[id] = 0;
   if (wavesReached > playerData.stageBestWave[id]) playerData.stageBestWave[id] = wavesReached;
   if (cleared) playerData.stageCleared[id] = true;
+  if (typeof autoSave === 'function') autoSave('battle-result');
 }
 
 // ── 一時停止 / 速度変更 ──────────────────────────────────────
@@ -239,6 +245,64 @@ function callNextWave() {
   gameState.money += waveBonus;
   gameState.floatingTexts.push(new FloatText(canvas.width/2, 100, `WAVE ${gameState.wave} CALLED / +${waveBonus}C`, '#ff66ff'));
   gameState.screenShake = 6;
+  updateGameUI();
+}
+
+// ────────────────────────────────────────────────
+//  DEVELOPER CONSOLE — 戦闘中チートコマンド
+//  (ui.js のデベロッカーパネルから呼び出される。通常のUIには表示されない)
+// ────────────────────────────────────────────────
+let devState = { godMode: false };
+
+function devAddCredits(amount) {
+  if (!gameState || gameState.state !== 'playing') return;
+  gameState.money += amount;
+  gameState.floatingTexts.push(new FloatText(canvas.width/2, 100, `[DEV] +${amount}C`, '#ff2266'));
+  updateGameUI();
+}
+
+function devSetHP(val) {
+  if (!gameState || gameState.state !== 'playing') return;
+  gameState.hp = val;
+  updateGameUI();
+}
+
+function devToggleGodMode() {
+  devState.godMode = !devState.godMode;
+  if (gameState && gameState.state === 'playing') {
+    gameState.floatingTexts.push(new FloatText(canvas.width/2, 100, `[DEV] GOD MODE ${devState.godMode ? 'ON' : 'OFF'}`, '#ff2266'));
+    updateGameUI();
+  } else if (typeof devPanelOpen !== 'undefined' && devPanelOpen && typeof renderDevPanel === 'function') {
+    renderDevPanel();
+  }
+}
+
+function devKillAllEnemies() {
+  if (!gameState || gameState.state !== 'playing') return;
+  gameState.enemies.forEach(e => { e.hp = Math.min(e.hp, 0); });
+}
+
+function devForceNextWave() {
+  if (!gameState || gameState.state !== 'playing') return;
+  if (gameState.wave >= gameState.stage.waves) { devInstantWin(); return; }
+  gameState.wave++;
+  gameState.waveTimer = 0;
+  gameState.spawnedBoss = false;
+  gameState.floatingTexts.push(new FloatText(canvas.width/2, 100, `[DEV] WAVE ${gameState.wave}`, '#ff2266'));
+  updateGameUI();
+}
+
+function devInstantWin() {
+  if (!gameState || gameState.state !== 'playing') return;
+  if (gameState.stage.endless) {
+    gameState.wave += 10;
+  } else {
+    gameState.wave = gameState.stage.waves;
+  }
+  gameState.enemies = [];
+  gameState.waveTimer = 999999;
+  gameState.spawnedBoss = true;
+  gameState.floatingTexts.push(new FloatText(canvas.width/2, 100, `[DEV] SKIP AHEAD`, '#ff2266'));
   updateGameUI();
 }
 
@@ -319,7 +383,6 @@ class Enemy {
     if (isBoss) {
       this.type = 'BOSS'; this.spd = 0.6 + wave * 0.04;
       this.maxHp = 900 * hm; this.sz = 26; this.reward = 200;
-      // Boss colour by biome
       const bossColors = { forest:'#cc44ff', desert:'#ff8800', cyber:'#00eeff',
                            void:'#ff00ff', swamp:'#88ff00', storm:'#ffff00',
                            ice:'#66ccff', space:'#aa88ff', chaos:'#ff0066',
@@ -337,8 +400,12 @@ class Enemy {
       const healerBoost = (biome === 'swamp' || biome === 'chaos' || biome === 'infinity') ? 3 : (wave >= 4 ? 1 : 0);
       // ice / chaos stages force more JUGGERNAUT
       const juggernautBoost = (biome === 'ice' || biome === 'chaos' || biome === 'infinity') ? 3 : (wave >= 6 ? 1 : 0);
+      // chaos / infinity stages force speed & teleport units
+      const dashBoost = (biome === 'chaos' || biome === 'storm' || biome === 'infinity') ? 3 : 0;
+      const warpBoost = (biome === 'void' || biome === 'space' || biome === 'infinity') ? 2 : 0;
 
-      const types   = ['NORM','RUN','TANK','SHIELD','SWARM','REGEN','GHOST','ARMOR','SPLITTER','HEALER','STEALTH','JUGGERNAUT'];
+      const types   = ['NORM','RUN','TANK','SHIELD','SWARM','REGEN','GHOST','ARMOR','SPLITTER','HEALER','STEALTH','JUGGERNAUT',
+                       'DASHER','NINJA','WARPER','SWARMQUEEN','MAGNAR'];
       const weights = [
         3,                           // NORM
         3,                           // RUN
@@ -352,6 +419,11 @@ class Enemy {
         healerBoost,                 // HEALER (new) — support, heals nearby enemies
         stealthBoost,                // STEALTH (new) — periodically untargetable
         juggernautBoost,             // JUGGERNAUT (new) — huge HP, immune to slow/stun/pull
+        (wave >= 3 ? 2 : 0) + dashBoost,   // DASHER — burst dash
+        (wave >= 4 ? 2 : 0) + (biome === 'ice' ? 1 : 0), // NINJA — evades shots
+        (wave >= 6 ? 1 : 0) + warpBoost,   // WARPER — teleports along path
+        wave >= 7 ? 1 : 0,           // SWARMQUEEN — spawns SWARMs
+        wave >= 5 ? 1 : 0,           // MAGNAR — haste aura for allies
       ];
       const total = weights.reduce((a,b)=>a+b,0);
       let rnd = Math.random() * total, t = types[0];
@@ -362,7 +434,7 @@ class Enemy {
         RUN:        { spd:3.2,  maxHp:25*hm,   color:'#ff55bb', sz:11, reward:16 },
         TANK:       { spd:0.7,  maxHp:150*hm,  color:'#ffaa00', sz:19, reward:28 },
         SHIELD:     { spd:1.1,  maxHp:70*hm,   color:'#44ddff', sz:15, reward:22, shield:40*hm },
-        SWARM:      { spd:2.3,  maxHp:18*hm,   color:'#44ff99', sz:9,  reward:8  },
+        SWARM:      { spd:2.3,  maxHp:16*hm,   color:'#44ff99', sz:9,  reward:8  },
         REGEN:      { spd:1.2,  maxHp:80*hm,   color:'#88ff44', sz:14, reward:20, regenRate:1.5 },
         GHOST:      { spd:1.8,  maxHp:55*hm,   color:'#cc88ff', sz:12, reward:24, ghosted:true  },
         ARMOR:      { spd:0.9,  maxHp:110*hm,  color:'#cc6600', sz:17, reward:30, armored:true  }, // 物理50%軽減
@@ -370,6 +442,11 @@ class Enemy {
         HEALER:     { spd:1.0,  maxHp:65*hm,   color:'#66ffaa', sz:14, reward:26, healer:true    }, // 周囲の敵を回復
         STEALTH:    { spd:2.0,  maxHp:50*hm,   color:'#8888ff', sz:12, reward:26, stealthy:true  }, // 周期的にロックオン不可
         JUGGERNAUT: { spd:0.5,  maxHp:220*hm,  color:'#996633', sz:21, reward:40, juggernaut:true}, // 鈍化/スタン/牽引 無効
+        DASHER:     { spd:1.6,  maxHp:48*hm,   color:'#ffcc00', sz:12, reward:24, dasher:true    }, // 周期的に burst dash
+        NINJA:      { spd:2.6,  maxHp:38*hm,   color:'#99ffcc', sz:11, reward:26, ninja:true     }, // 22%で攻撃回避
+        WARPER:     { spd:1.2,  maxHp:70*hm,   color:'#ff99ff', sz:14, reward:30, warper:true    }, // 経路を瞬間移動でショートカット
+        SWARMQUEEN: { spd:1.0,  maxHp:110*hm,  color:'#33ff77', sz:18, reward:45, queen:true     }, // 生存中にSWARMを増殖
+        MAGNAR:     { spd:0.9,  maxHp:90*hm,   color:'#ff7744', sz:16, reward:32, magnar:true    }, // 周囲の味方を加速
       };
       Object.assign(this, cfg[t]);
       if (!this.regenRate)  this.regenRate  = 0;
@@ -379,11 +456,18 @@ class Enemy {
       if (!this.healer)     this.healer     = false;
       if (!this.stealthy)   this.stealthy   = false;
       if (!this.juggernaut) this.juggernaut = false;
+      if (!this.dasher)     this.dasher     = false;
+      if (!this.ninja)      this.ninja      = false;
+      if (!this.warper)     this.warper     = false;
+      if (!this.queen)      this.queen      = false;
+      if (!this.magnar)     this.magnar     = false;
     }
     if (this.stealthy) {
       this.stealthOffset = Math.floor(Math.random() * 150);
       this.stealthed = false;
     }
+    if (this.dasher) { this.dashT = 0; this.dashCd = 40 + Math.floor(Math.random() * 70); }
+    if (this.warper) { this.warpCd = 150 + Math.floor(Math.random() * 120); }
 
     // biome speed modifiers
     if (biome === 'desert') this.spd *= 1.35;
@@ -408,6 +492,17 @@ class Enemy {
     // PULSAR stun — fully halts movement while active
     if (this.stunTimer > 0) { s = 0; this.stunTimer--; }
 
+    // DASHER — periodic burst dash (2.9x speed for 16 frames)
+    if (this.dasher) {
+      if (this.dashT > 0) { s *= 2.9; this.dashT--; }
+      else if (--this.dashCd <= 0) { this.dashT = 16; this.dashCd = 110; }
+    }
+
+    // MAGNAR aura — hasted by nearby MAGNAR units
+    if (!this.magnar && gameState.enemies.some(o => o !== this && o.magnar && Math.hypot(o.x - this.x, o.y - this.y) < 75)) {
+      s *= 1.3;
+    }
+
     // Regen HP
     if (this.regenRate > 0 && this.hp > 0 && this.hp < this.maxHp) {
       let rr = this.regenRate;
@@ -417,13 +512,38 @@ class Enemy {
 
     // HEALER — heals nearby wounded allies each frame
     if (this.healer && this.hp > 0) {
-      let healRate = 0.8;
+      let healRate = 0.6;
       if (gameState.stage.biome === 'chaos') healRate *= 1.4;
       gameState.enemies.forEach(e => {
         if (e !== this && e.hp > 0 && e.hp < e.maxHp && Math.hypot(e.x - this.x, e.y - this.y) <= 75) {
           e.hp = Math.min(e.maxHp, e.hp + healRate);
         }
       });
+    }
+
+    // SWARMQUEEN — spawns a SWARM every ~2.3 seconds while alive
+    if (this.queen && this.hp > 0 && gameState.frame % 140 === 0 && gameState.enemies.length < 180) {
+      const s2 = new Enemy(gameState.wave, false);
+      s2.type = 'SWARM'; s2.color = '#33ff77'; s2.sz = 8;
+      s2.spd = 2.4; s2.maxHp = this.maxHp * 0.12; s2.hp = s2.maxHp;
+      s2.reward = 4; s2.splits = false; s2.queen = false;
+      s2.x = this.x + (Math.random()-0.5)*24; s2.y = this.y + (Math.random()-0.5)*24;
+      s2.pathIdx = Math.max(0, this.pathIdx);
+      gameState.enemies.push(s2);
+      gameState.floatingTexts.push(new FloatText(this.x, this.y - 20, 'SPAWN', '#33ff77'));
+    }
+
+    // WARPER — periodically teleports 2 path nodes ahead
+    if (this.warper && this.hp > 0 && this.pathIdx < battlePath.length - 3) {
+      if (--this.warpCd <= 0) {
+        this.warpCd = 250;
+        spawnParticles(this.x, this.y, '#ff99ff', 16);
+        this.pathIdx = Math.min(this.pathIdx + 2, battlePath.length - 2);
+        this.x = battlePath[this.pathIdx].x;
+        this.y = battlePath[this.pathIdx].y;
+        spawnParticles(this.x, this.y, '#ff99ff', 16);
+        gameState.floatingTexts.push(new FloatText(this.x, this.y, 'WARP', '#ff99ff'));
+      }
     }
 
     // STEALTH — periodically becomes untargetable by tower lock-on
@@ -434,7 +554,7 @@ class Enemy {
 
     // VIRUS DOT damage
     if (this.infected > 0) {
-      this.hp -= 1.0;
+      this.hp -= 1.4;
       this.infected--;
     }
 
@@ -470,7 +590,7 @@ class Enemy {
     ctx.shadowColor = this.color;
     ctx.strokeStyle = this.color;
     ctx.lineWidth   = 2;
-    ctx.fillStyle   = this.ghosted ? 'rgba(40,10,60,0.5)' : 'rgba(4,4,20,0.88)';
+    ctx.fillStyle   = 'rgba(4,4,20,0.88)';
     if (this.ghosted) ctx.globalAlpha = 0.65;
     if (this.stealthed) ctx.globalAlpha = 0.22;
     ctx.rotate(this.angle);
@@ -558,7 +678,6 @@ class Enemy {
       ctx.fillStyle = '#cc88ff'; ctx.fill();
 
     } else if (this.type === 'ARMOR') {
-      // ヘキサゴン + 外装プレート
       ctx.beginPath();
       for (let i = 0; i < 6; i++) {
         const a = Math.PI/3*i - Math.PI/6;
@@ -575,7 +694,6 @@ class Enemy {
       }
 
     } else if (this.type === 'SPLITTER') {
-      // ダイヤモンド型 + 内部の分裂ライン
       ctx.beginPath();
       ctx.moveTo(0, -this.sz); ctx.lineTo(this.sz, 0);
       ctx.lineTo(0, this.sz);  ctx.lineTo(-this.sz, 0);
@@ -586,7 +704,6 @@ class Enemy {
       ctx.setLineDash([]);
 
     } else if (this.type === 'HEALER') {
-      // 十字＋円 — 回復ユニット
       ctx.beginPath(); ctx.arc(0, 0, this.sz * 0.7, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
       ctx.lineWidth = 3;
       ctx.beginPath();
@@ -595,7 +712,6 @@ class Enemy {
       ctx.stroke();
 
     } else if (this.type === 'STEALTH') {
-      // 破線輪郭の菱形 — 潜伏ユニット
       ctx.setLineDash([2,2]);
       ctx.beginPath();
       ctx.moveTo(0, -this.sz); ctx.lineTo(this.sz*0.8, 0);
@@ -604,7 +720,6 @@ class Enemy {
       ctx.setLineDash([]);
 
     } else if (this.type === 'JUGGERNAUT') {
-      // 分厚い八角形の重装甲
       ctx.beginPath();
       for (let i = 0; i < 8; i++) {
         const a = Math.PI/4*i;
@@ -613,6 +728,62 @@ class Enemy {
       ctx.closePath(); ctx.fill(); ctx.stroke();
       ctx.lineWidth = 1; ctx.globalAlpha *= 0.8;
       ctx.beginPath(); ctx.arc(0, 0, this.sz * 0.55, 0, Math.PI * 2); ctx.stroke();
+
+    } else if (this.type === 'DASHER') {
+      // 矢印型 — ダッシュ方向へ尖る
+      ctx.beginPath();
+      ctx.moveTo(this.sz*1.3, 0);
+      ctx.lineTo(-this.sz*0.7, -this.sz*0.7);
+      ctx.lineTo(-this.sz*0.2, 0);
+      ctx.lineTo(-this.sz*0.7,  this.sz*0.7);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.globalAlpha *= 0.6;
+      ctx.beginPath(); ctx.moveTo(-this.sz*0.4, 0); ctx.lineTo(-this.sz*1.2, 0); ctx.stroke();
+
+    } else if (this.type === 'NINJA') {
+      // 細い菱形 — 刃のように鋭い
+      ctx.beginPath();
+      ctx.moveTo(this.sz*1.2, 0); ctx.lineTo(0, -this.sz*0.5);
+      ctx.lineTo(-this.sz*1.2, 0); ctx.lineTo(0, this.sz*0.5);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.setLineDash([2,3]);
+      ctx.beginPath(); ctx.arc(0, 0, this.sz*0.8, 0, Math.PI*2); ctx.stroke();
+      ctx.setLineDash([]);
+
+    } else if (this.type === 'WARPER') {
+      // 重なり合う二重円 — 位相ずれ
+      ctx.save();
+      ctx.rotate(gameState.frame * 0.05);
+      ctx.beginPath(); ctx.arc(-this.sz*0.3, 0, this.sz*0.7, 0, Math.PI*2); ctx.stroke();
+      ctx.rotate(-gameState.frame * 0.1);
+      ctx.beginPath(); ctx.arc( this.sz*0.3, 0, this.sz*0.7, 0, Math.PI*2); ctx.stroke();
+      ctx.restore();
+      ctx.beginPath(); ctx.arc(0, 0, this.sz*0.3, 0, Math.PI*2); ctx.fill();
+
+    } else if (this.type === 'SWARMQUEEN') {
+      // 大円 + 周囲を周回する胞子
+      ctx.beginPath(); ctx.arc(0, 0, this.sz*0.8, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+      ctx.rotate(gameState.frame * 0.06);
+      ctx.fillStyle = this.color;
+      for (let i = 0; i < 4; i++) {
+        const a = Math.PI/2*i;
+        ctx.beginPath();
+        ctx.arc(Math.cos(a)*this.sz*0.9, Math.sin(a)*this.sz*0.9, 3, 0, Math.PI*2);
+        ctx.fill();
+      }
+
+    } else if (this.type === 'MAGNAR') {
+      // 四角磁場コア + 磁力線
+      ctx.fillRect(-this.sz*0.6, -this.sz*0.6, this.sz*1.2, this.sz*1.2);
+      ctx.strokeRect(-this.sz*0.6, -this.sz*0.6, this.sz*1.2, this.sz*1.2);
+      ctx.save();
+      ctx.rotate(-this.angle);
+      ctx.globalAlpha *= 0.5;
+      for (let i = 0; i < 2; i++) {
+        const rr = this.sz + 5 + ((gameState.frame*0.4 + i*8) % 16);
+        ctx.beginPath(); ctx.arc(0, 0, rr, 0, Math.PI*2); ctx.stroke();
+      }
+      ctx.restore();
     }
 
     // INFECTED indicator
@@ -698,7 +869,7 @@ class Tower {
       if (t2 !== this && t2.tmpl.special === 'support') {
         const dist = Math.hypot(t2.x - this.x, t2.y - this.y);
         if (dist <= t2.getRange()) {
-          let b = 0.15 + (t2.lv - 1) * 0.05;
+          let b = 0.2 + (t2.lv - 1) * 0.06;
           if (gameState.stage.biome === 'chaos') b *= 1.3;
           bonus += b;
         }
@@ -744,6 +915,38 @@ class Tower {
 
   update() {
     if (this.cd > 0) { this.cd--; return; }
+    const sp = this.tmpl.special;
+
+    // ── AEGIS — repair base integrity (no target needed) ──
+    if (sp === 'repair') {
+      const cap = gameState.maxHp || 20;
+      if (gameState.hp < cap) {
+        gameState.hp += 1;
+        gameState.floatingTexts.push(new FloatText(this.x, this.y, '+1 INTEGRITY', '#00ff88'));
+        spawnParticles(this.x, this.y, '#00ff88', 14);
+        gameState.screenShake = Math.max(gameState.screenShake, 4);
+        updateGameUI();
+      }
+      this.cd = this.getCooldown();
+      return;
+    }
+
+    // ── ECLIPSE — global nova (no target needed, fires on CD whenever enemies exist) ──
+    if (sp === 'eclipse') {
+      if (gameState.enemies.length > 0) {
+        gameState.enemies.forEach(e => {
+          e.takeDamage(this.getDamage());
+          if (!e.juggernaut) e.slowTimer = Math.max(e.slowTimer, 80);
+          spawnParticles(e.x, e.y, '#7a5cff', 6);
+        });
+        addEffect({ type:'eclipse', x:this.x, y:this.y, t:26, color:this.tmpl.color });
+        gameState.screenShake = 18;
+        gameState.floatingTexts.push(new FloatText(this.x, this.y, 'ECLIPSE NOVA', '#aa88ff'));
+      }
+      this.cd = this.getCooldown();
+      return;
+    }
+
     const rng = this.getRange();
     // STEALTH enemies cannot be locked onto directly (area attacks still hit them)
     const inRange = gameState.enemies.filter(e => Math.hypot(e.x - this.x, e.y - this.y) < rng && !e.stealthed);
@@ -778,7 +981,6 @@ class Tower {
     this.angle = Math.atan2(tgt.y - this.y, tgt.x - this.x);
 
     // ── SPECIAL ATTACK DISPATCH ────────────────────────────────────
-    const sp = this.tmpl.special;
 
     if (this.tmpl.id === 3) {
       // TESLA – AOE pulse (storm stage triggers full aoe on every shot)
@@ -834,12 +1036,12 @@ class Tower {
 
     } else if (sp === 'overload') {
       // OVERLOAD — accumulate heat; at 100 trigger explosion
-      this.heat = (this.heat || 0) + 22;
+      this.heat = (this.heat || 0) + 20;
       if (this.heat >= 100) {
         // OVERHEAT BLAST
         addEffect({ type:'explosion', x:this.x, y:this.y, r:90, t:16 });
         gameState.enemies.forEach(e => {
-          if (Math.hypot(e.x-this.x, e.y-this.y) <= 90) e.takeDamage(this.getDamage() * 4);
+          if (Math.hypot(e.x-this.x, e.y-this.y) <= 90) e.takeDamage(this.getDamage() * 5);
         });
         gameState.floatingTexts.push(new FloatText(this.x, this.y, 'OVERHEAT!!', '#ff8800'));
         gameState.screenShake = 12;
@@ -878,6 +1080,34 @@ class Tower {
       });
       gameState.floatingTexts.push(new FloatText(this.x, this.y, 'METEOR INCOMING', this.tmpl.color));
       spawnParticles(this.x, this.y, this.tmpl.color, 10);
+
+    } else if (sp === 'sentry') {
+      // SENTINEL — twin cannons fire at up to 2 targets at once
+      gameState.projectiles.push(new Projectile(this.x, this.y, tgt, this));
+      const others = inRange.filter(e => e !== tgt);
+      if (others.length > 0) {
+        const second = others.reduce((c, e) => Math.hypot(e.x-this.x, e.y-this.y) < Math.hypot(c.x-this.x, c.y-this.y) ? e : c, others[0]);
+        gameState.projectiles.push(new Projectile(this.x, this.y, second, this));
+      }
+
+    } else if (sp === 'chaos') {
+      // TEMPEST — bolt rolls a random effect on hit (slow/stun/burn/crit)
+      gameState.projectiles.push(new Projectile(this.x, this.y, tgt, this));
+
+    } else if (sp === 'ricochet') {
+      // HAVOC — bouncing shot that GROWS stronger with each bounce (up to 6 targets)
+      gameState.projectiles.push(new RicochetProjectile(this.x, this.y, tgt, this, inRange));
+
+    } else if (sp === 'burst') {
+      // TRINITY — 3-round burst at the same target
+      gameState.projectiles.push(new Projectile(this.x, this.y, tgt, this));
+      const captTgt = tgt, captThis = this;
+      [80, 160].forEach(delay => {
+        setTimeout(() => {
+          if (gameState && gameState.state === 'playing' && captTgt.hp > 0)
+            gameState.projectiles.push(new Projectile(captThis.x, captThis.y, captTgt, captThis));
+        }, delay);
+      });
 
     } else {
       gameState.projectiles.push(new Projectile(this.x, this.y, tgt, this));
@@ -940,17 +1170,19 @@ class Tower {
 
     this.drawShape();
 
-    // Barrel
-    ctx.save();
-    ctx.rotate(this.angle);
-    const bw = this.lv >= 2 ? 7 : 4.5;
-    const bl = this.lv >= 3 ? 22 : 16;
-    ctx.fillStyle = 'rgba(200,220,255,0.92)';
-    ctx.fillRect(0, -bw/2, bl, bw);
-    ctx.fillStyle = this.tmpl.color;
-    ctx.fillRect(bl-3, -bw/2-1, 4, bw+2);
-    ctx.beginPath(); ctx.arc(0, 0, 5.5, 0, Math.PI*2); ctx.fill();
-    ctx.restore();
+    // Barrel (support/repair towers don't need one)
+    if (this.tmpl.special !== 'support' && this.tmpl.special !== 'repair') {
+      ctx.save();
+      ctx.rotate(this.angle);
+      const bw = this.lv >= 2 ? 7 : 4.5;
+      const bl = this.lv >= 3 ? 22 : 16;
+      ctx.fillStyle = 'rgba(200,220,255,0.92)';
+      ctx.fillRect(0, -bw/2, bl, bw);
+      ctx.fillStyle = this.tmpl.color;
+      ctx.fillRect(bl-3, -bw/2-1, 4, bw+2);
+      ctx.beginPath(); ctx.arc(0, 0, 5.5, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
     ctx.restore();
   }
 
@@ -1041,6 +1273,64 @@ class Tower {
       ctx.moveTo(0,-16); ctx.lineTo(10,4); ctx.lineTo(4,4); ctx.lineTo(6,14);
       ctx.lineTo(-6,14); ctx.lineTo(-4,4); ctx.lineTo(-10,4);
       ctx.closePath(); ctx.fill(); ctx.stroke();
+    } else if (id===17) {
+      // SENTINEL — twin barrels side by side
+      ctx.fillRect(-14,-12,28,24); ctx.strokeRect(-14,-12,28,24);
+      ctx.fillStyle = this.tmpl.color;
+      ctx.fillRect(-9,-4,7,8); ctx.fillRect(2,-4,7,8);
+    } else if (id===18) {
+      // TEMPEST — storm hexagon with spinning core
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = Math.PI/3*i;
+        ctx.lineTo(Math.cos(a)*14, Math.sin(a)*14);
+      }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.save();
+      ctx.rotate(gameState.frame * 0.09);
+      ctx.strokeStyle = this.tmpl.color; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(-6,-6); ctx.lineTo(6,6); ctx.moveTo(6,-6); ctx.lineTo(-6,6); ctx.stroke();
+      ctx.restore();
+    } else if (id===19) {
+      // HAVOC — triple chevron ricochet fins
+      ctx.beginPath();
+      ctx.moveTo(-12,-10); ctx.lineTo(2,0); ctx.lineTo(-12,10);
+      ctx.moveTo(-4,-10); ctx.lineTo(10,0); ctx.lineTo(-4,10);
+      ctx.stroke();
+      ctx.beginPath(); ctx.arc(0,0,8,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    } else if (id===20) {
+      // AEGIS — shield emblem
+      ctx.beginPath();
+      ctx.moveTo(0,-15); ctx.lineTo(12,-8); ctx.lineTo(12,4);
+      ctx.quadraticCurveTo(12,12, 0,16);
+      ctx.quadraticCurveTo(-12,12, -12,4);
+      ctx.lineTo(-12,-8); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = this.tmpl.color + '99';
+      ctx.beginPath(); ctx.moveTo(0,-8); ctx.lineTo(0,8); ctx.stroke();
+      ctx.beginPath(); ctx.arc(0,2,4,0,Math.PI*2); ctx.stroke();
+    } else if (id===21) {
+      // ECLIPSE — black sun with corona rays
+      ctx.beginPath(); ctx.arc(0,0,11,0,Math.PI*2); ctx.fill(); ctx.stroke();
+      ctx.save();
+      ctx.strokeStyle = this.tmpl.color + 'aa'; ctx.lineWidth = 1;
+      for (let i = 0; i < 8; i++) {
+        const a = Math.PI/4*i + gameState.frame*0.03;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a)*13, Math.sin(a)*13);
+        ctx.lineTo(Math.cos(a)*18, Math.sin(a)*18);
+        ctx.stroke();
+      }
+      ctx.restore();
+    } else if (id===22) {
+      // TRINITY — triple overlapping triangles
+      for (let k = 0; k < 3; k++) {
+        ctx.save();
+        ctx.rotate(k * Math.PI*2/3 + gameState.frame*0.02);
+        ctx.beginPath(); ctx.moveTo(0,-14); ctx.lineTo(8,6); ctx.lineTo(-8,6); ctx.closePath();
+        ctx.globalAlpha = 0.75; ctx.stroke();
+        ctx.restore();
+      }
+      ctx.beginPath(); ctx.arc(0,0,5,0,Math.PI*2); ctx.fill();
     }
   }
 }
@@ -1059,6 +1349,12 @@ class Projectile {
     if (!this.alive || this.tgt.hp <= 0) { this.alive = false; return; }
     const dx = this.tgt.x - this.x, dy = this.tgt.y - this.y, d = Math.hypot(dx, dy);
     if (d < this.spd) {
+      // NINJA — chance to evade incoming shots entirely
+      if (this.tgt.ninja && Math.random() < 0.22) {
+        gameState.floatingTexts.push(new FloatText(this.tgt.x, this.tgt.y, 'EVADE', '#99ffcc'));
+        spawnParticles(this.tgt.x, this.tgt.y, '#99ffcc', 4);
+        this.alive = false; return;
+      }
       if (this.src.tmpl.id === 2) {
         if (!this.tgt.juggernaut) this.tgt.slowTimer = 110; // JUGGERNAUT resists slow
       } else if (this.src.tmpl.id === 4) {
@@ -1069,17 +1365,34 @@ class Projectile {
         this.tgt.hp -= this.src.getDamage(); // PHANTOM ignores shield and ghost
       } else if (this.src.tmpl.special === 'virus') {
         this.tgt.takeDamage(this.src.getDamage());
-        // Re-apply infection
         const infectDuration = gameState.stage.biome === 'swamp' ? 220 : 150;
         this.tgt.infected = infectDuration;
       } else if (this.src.tmpl.special === 'stun') {
         this.tgt.takeDamage(this.src.getDamage());
-        let stunChance = 0.4;
-        if (gameState.stage.biome === 'space') stunChance = 0.55;
+        let stunChance = 0.5;
+        if (gameState.stage.biome === 'space') stunChance = 0.6;
         if (Math.random() < stunChance && !this.tgt.juggernaut) {
-          this.tgt.stunTimer = 50 + (this.src.lv - 1) * 6;
+          this.tgt.stunTimer = 60 + (this.src.lv - 1) * 6;
           gameState.floatingTexts.push(new FloatText(this.tgt.x, this.tgt.y, 'STUN!', '#ff66ff'));
         }
+      } else if (this.src.tmpl.special === 'chaos') {
+        // TEMPEST — random elemental effect per hit
+        let dmg = this.src.getDamage();
+        const roll = Math.random();
+        if (roll < 0.30) {
+          this.tgt.slowTimer = Math.max(this.tgt.slowTimer, 70);
+          gameState.floatingTexts.push(new FloatText(this.tgt.x, this.tgt.y, 'CHILL', '#88ccff'));
+        } else if (roll < 0.52) {
+          if (!this.tgt.juggernaut) { this.tgt.stunTimer = 35; gameState.floatingTexts.push(new FloatText(this.tgt.x, this.tgt.y, 'SHOCK', '#ff66ff')); }
+        } else if (roll < 0.75) {
+          this.tgt.infected = Math.max(this.tgt.infected, 80);
+          gameState.floatingTexts.push(new FloatText(this.tgt.x, this.tgt.y, 'BURN', '#ff8800'));
+        } else {
+          dmg *= 2.2;
+          gameState.floatingTexts.push(new FloatText(this.tgt.x, this.tgt.y, 'CRIT!', '#ffd700'));
+        }
+        if (this.tgt.ghosted) dmg *= 0.4;
+        this.tgt.takeDamage(dmg);
       } else {
         let dmg = this.src.getDamage();
         if (this.tgt.ghosted && this.src.tmpl.id !== 5) dmg *= 0.4;
@@ -1117,13 +1430,16 @@ class MirrorProjectile extends Projectile {
     if (!this.alive || this.tgt.hp <= 0) { this.alive = false; return; }
     const dx = this.tgt.x - this.x, dy = this.tgt.y - this.y, d = Math.hypot(dx, dy);
     if (d < this.spd) {
+      if (this.tgt.ninja && Math.random() < 0.22) {
+        gameState.floatingTexts.push(new FloatText(this.tgt.x, this.tgt.y, 'EVADE', '#99ffcc'));
+        this.alive = false; return;
+      }
       let dmg = this.src.getDamage();
       if (this.tgt.ghosted) dmg *= 0.4;
       this.tgt.takeDamage(dmg);
       spawnParticles(this.x, this.y, this.src.tmpl.color, 7);
 
       if (!this.bounced) {
-        // Find another enemy to bounce to
         const others = this.pool.filter(e => e !== this.tgt && e.hp > 0);
         if (others.length > 0) {
           this.bounced = true;
@@ -1133,7 +1449,7 @@ class MirrorProjectile extends Projectile {
           this.x = this.tgt.x; this.y = this.tgt.y;
           this.tgt = bounce;
           spawnParticles(this.x, this.y, '#88eeff', 5);
-          return; // don't kill — let it continue to bounce target
+          return;
         }
       }
       this.alive = false;
@@ -1159,6 +1475,10 @@ class ChainProjectile extends Projectile {
     if (!this.alive || this.tgt.hp <= 0) { this.alive = false; return; }
     const dx = this.tgt.x - this.x, dy = this.tgt.y - this.y, d = Math.hypot(dx, dy);
     if (d < this.spd) {
+      if (this.tgt.ninja && Math.random() < 0.22) {
+        gameState.floatingTexts.push(new FloatText(this.tgt.x, this.tgt.y, 'EVADE', '#99ffcc'));
+        this.alive = false; return;
+      }
       let dmg = this.src.getDamage() * this.falloff;
       if (this.tgt.ghosted) dmg *= 0.4;
       this.tgt.takeDamage(dmg);
@@ -1177,6 +1497,55 @@ class ChainProjectile extends Projectile {
           gameState.chainBeams.push({ x1:this.x, y1:this.y, x2:next.x, y2:next.y, t:10, color:this.src.tmpl.color });
           this.jumpsLeft--;
           this.falloff *= 0.72;
+          this.x = this.tgt.x; this.y = this.tgt.y;
+          this.tgt = next;
+          return;
+        }
+      }
+      this.alive = false;
+    } else {
+      this.x += dx / d * this.spd;
+      this.y += dy / d * this.spd;
+    }
+  }
+}
+
+// HAVOC ricochet — bounces up to 6 targets, damage GROWS with each bounce
+class RicochetProjectile extends ChainProjectile {
+  constructor(x, y, tgt, src, pool) {
+    super(x, y, tgt, src, pool);
+    this.jumpsLeft = 5;    // up to 6 enemies hit
+    this.falloff = 1;      // damage multiplier, grows instead of shrinking
+    this.chainRange = 220;
+    this.growth = 1.15;    // +15% damage per bounce
+  }
+
+  update() {
+    if (!this.alive || this.tgt.hp <= 0) { this.alive = false; return; }
+    const dx = this.tgt.x - this.x, dy = this.tgt.y - this.y, d = Math.hypot(dx, dy);
+    if (d < this.spd) {
+      if (this.tgt.ninja && Math.random() < 0.22) {
+        gameState.floatingTexts.push(new FloatText(this.tgt.x, this.tgt.y, 'EVADE', '#99ffcc'));
+        this.alive = false; return;
+      }
+      let dmg = this.src.getDamage() * this.falloff;
+      if (this.tgt.ghosted) dmg *= 0.4;
+      this.tgt.takeDamage(dmg);
+      spawnParticles(this.x, this.y, this.src.tmpl.color, 6);
+      this.hitList.push(this.tgt);
+
+      if (this.jumpsLeft > 0) {
+        const candidates = this.pool.filter(e =>
+          e.hp > 0 && !this.hitList.includes(e) && !e.stealthed &&
+          Math.hypot(e.x - this.x, e.y - this.y) <= this.chainRange
+        );
+        if (candidates.length > 0) {
+          const next = candidates.reduce((closest, e) =>
+            Math.hypot(e.x-this.x, e.y-this.y) < Math.hypot(closest.x-this.x, closest.y-this.y) ? e : closest
+          , candidates[0]);
+          gameState.chainBeams.push({ x1:this.x, y1:this.y, x2:next.x, y2:next.y, t:10, color:this.src.tmpl.color });
+          this.jumpsLeft--;
+          this.falloff *= this.growth;
           this.x = this.tgt.x; this.y = this.tgt.y;
           this.tgt = next;
           return;
@@ -1252,7 +1621,7 @@ function drawBackground() {
   ctx.fillStyle = bgGrad;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // Biome ambient particles (void: floating purple dots, storm: flickering yellow lines)
+  // Biome ambient particles
   if (stage.biome === 'void' && gameState.frame % 3 === 0) {
     ctx.save();
     ctx.fillStyle = '#cc44ff';
@@ -1263,7 +1632,6 @@ function drawBackground() {
     ctx.restore();
   }
   if (stage.biome === 'storm' && gameState.frame % 60 === 0) {
-    // Lightning flash
     ctx.save();
     ctx.strokeStyle = '#ffffaa';
     ctx.globalAlpha = 0.25;
@@ -1273,7 +1641,6 @@ function drawBackground() {
     ctx.restore();
   }
   if (stage.biome === 'ice' && gameState.frame % 4 === 0) {
-    // Drifting snow specks
     ctx.save();
     ctx.fillStyle = '#bbeeff';
     ctx.globalAlpha = 0.2 + Math.random() * 0.15;
@@ -1282,7 +1649,6 @@ function drawBackground() {
     ctx.restore();
   }
   if (stage.biome === 'space' && gameState.frame % 5 === 0) {
-    // Twinkling starfield
     ctx.save();
     ctx.fillStyle = '#ddccff';
     ctx.globalAlpha = 0.3 + Math.random() * 0.3;
@@ -1291,7 +1657,6 @@ function drawBackground() {
     ctx.restore();
   }
   if (stage.biome === 'chaos' && gameState.frame % 45 === 0) {
-    // Reality glitch flicker
     ctx.save();
     ctx.strokeStyle = '#ff0066';
     ctx.globalAlpha = 0.2;
@@ -1301,7 +1666,6 @@ function drawBackground() {
     ctx.restore();
   }
   if (stage.biome === 'infinity' && gameState.frame % 4 === 0) {
-    // Prismatic shimmer — endless mode's "everything at once" identity
     ctx.save();
     const hue = (gameState.frame * 3) % 360;
     ctx.fillStyle = `hsl(${hue}, 90%, 70%)`;
@@ -1399,9 +1763,28 @@ function drawPathArrows(color) {
 }
 
 // ──────────────────────────────────────────────
-//  HOVER PREVIEW
+//  HOVER PREVIEW + SELECTED TOWER RANGE
 // ──────────────────────────────────────────────
 function drawPreview() {
+  // 選択中のタワーの射程を常時表示（マウスホバー不要）
+  if (gameState.selectedTower) {
+    const tw = gameState.selectedTower;
+    ctx.save();
+    ctx.beginPath(); ctx.arc(tw.x, tw.y, tw.getRange(), 0, Math.PI*2);
+    ctx.fillStyle = tw.tmpl.color + '0a';
+    ctx.fill();
+    ctx.strokeStyle = tw.tmpl.color + 'aa';
+    ctx.lineWidth = 1.5; ctx.setLineDash([7, 5]);
+    ctx.beginPath(); ctx.arc(tw.x, tw.y, tw.getRange(), 0, Math.PI*2); ctx.stroke();
+    ctx.setLineDash([]);
+    // support auras too
+    if (tw.tmpl.special === 'support') {
+      ctx.strokeStyle = '#ffee4455';
+      ctx.beginPath(); ctx.arc(tw.x, tw.y, tw.getRange(), 0, Math.PI*2); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   if (!gameState?.hoverCell) return;
   const { c, r } = gameState.hoverCell;
   const cx = c * GS + GS / 2, cy = r * GS + GS / 2;
@@ -1445,10 +1828,6 @@ function drawPreview() {
 // ──────────────────────────────────────────────
 //  MAIN GAME LOOP
 // ──────────────────────────────────────────────
-// gameLoop() is the requestAnimationFrame entry point. It runs gameTick()
-// (one full simulation+draw pass) one or more times per animation frame,
-// depending on the selected speed multiplier — this is how 2x/3x speed
-// and pause are implemented without touching the simulation code itself.
 function gameLoop() {
   if (!gameState || gameState.state !== 'playing') return;
   const ticks = gameState.paused ? 0 : (gameState.speedMult || 1);
@@ -1494,7 +1873,6 @@ function gameTick() {
     if (gameState.wave >= 5 && Math.random() < 0.35)
       gameState.enemies.push(new Enemy(gameState.wave, false));
   }
-  // ENDLESSでは5ウェーブごとにボスを召喚（通常ステージは最終ウェーブのみ）
   const isBossWave = gameState.stage.endless
     ? (gameState.wave % 5 === 0)
     : (gameState.wave === gameState.stage.waves);
@@ -1593,6 +1971,10 @@ function gameTick() {
   gameState.enemies.forEach(e => { e.update(); e.draw(); });
   gameState.enemies = gameState.enemies.filter(e => {
     if (e.hp <= 0 && e.pathIdx < battlePath.length - 1) {
+      // 撃破記録（敵アーカイブ用）
+      const kc = playerData.enemyKills;
+      kc[e.type] = (kc[e.type] || 0) + 1;
+
       gameState.money += e.reward;
       spawnParticles(e.x, e.y, e.color, e.isBoss ? 80 : 18);
       gameState.floatingTexts.push(new FloatText(e.x, e.y, `+${e.reward}C`, '#ffd700'));
@@ -1632,15 +2014,16 @@ function gameTick() {
         ctx.lineTo(ef.x + Math.cos(a) * ef.r, ef.y + Math.sin(a) * ef.r); ctx.stroke();
       }
     } else if (ef.type === 'explosion') {
-      const p = ef.t / 14;
+      // NOTE: clamp progress to [0,1] — a negative radius in ctx.arc() throws,
+      // which silently killed the rAF loop (the old METEOR/OVERLOAD freeze bug).
+      const p = Math.max(0, Math.min(1, ef.t / 14));
       ctx.strokeStyle = '#ff3355'; ctx.shadowColor = '#ff3355'; ctx.lineWidth = 2;
       ctx.fillStyle   = `rgba(255,60,0,${p * 0.12})`;
-      ctx.beginPath(); ctx.arc(ef.x, ef.y, ef.r * (1-p), 0, Math.PI*2);
+      ctx.beginPath(); ctx.arc(ef.x, ef.y, Math.max(0, ef.r * (1-p)), 0, Math.PI*2);
       ctx.fill(); ctx.stroke();
       ctx.strokeStyle = '#ffaa00'; ctx.lineWidth = 1; ctx.globalAlpha = p * 0.5;
       ctx.beginPath(); ctx.arc(ef.x, ef.y, ef.r * (1.3 - p * 0.3), 0, Math.PI*2); ctx.stroke();
     } else if (ef.type === 'vortex') {
-      // Spinning vortex effect
       ctx.strokeStyle = '#aa55ff'; ctx.shadowColor = '#aa55ff'; ctx.lineWidth = 1.5;
       ctx.globalAlpha = ef.t / 12 * 0.7;
       ctx.save();
@@ -1651,6 +2034,18 @@ function gameTick() {
         ctx.stroke();
       }
       ctx.restore();
+    } else if (ef.type === 'eclipse') {
+      // ECLIPSE NOVA — expanding dark-violet shock ring + dimming
+      const pr = 1 - Math.max(0, ef.t) / 26;
+      ctx.strokeStyle = ef.color || '#aa88ff';
+      ctx.shadowColor = ef.color || '#aa88ff';
+      ctx.lineWidth = 4;
+      ctx.globalAlpha = Math.max(0, ef.t / 26);
+      ctx.beginPath(); ctx.arc(ef.x, ef.y, Math.max(1, pr * 650), 0, Math.PI*2); ctx.stroke();
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(ef.x, ef.y, Math.max(1, pr * 520), 0, Math.PI*2); ctx.stroke();
+      ctx.fillStyle = `rgba(8,0,24,${pr * 0.28})`;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
     ctx.globalAlpha = 1; ctx.restore(); ef.t--;
   });
@@ -1684,7 +2079,13 @@ function getGrid(e) {
 function placeTower(cell) {
   if (!cell) return;
   const tw = gameState.towers.find(t => t.c === cell.c && t.r === cell.r);
-  if (tw) { gameState.selectedTower = tw; updateGameUI(); return; }
+  if (tw) {
+    // 選択中のタワーをもう一度タップ → 選択解除
+    if (gameState.selectedTower === tw) gameState.selectedTower = null;
+    else gameState.selectedTower = tw;
+    updateGameUI();
+    return;
+  }
   const onPath = pathCells.has(`${cell.c},${cell.r}`);
   const tmpl   = gameState.stageActiveChars[gameState.selectedBuildIdx];
   const built  = gameState.towers.filter(t => t.tmpl.id === tmpl.id).length;
