@@ -24,7 +24,7 @@
   // ── Progress simulation ──
   const STEPS = [
     { pct: 5,  label: "CORE CRYSTAL MATRICES ONLINE...",        delay: 260 },
-    { pct: 12, label: "LOADING UNIT ARCHIVES [23 UNITS]...",    delay: 240 },
+    { pct: 12, label: "LOADING UNIT ARCHIVES [31 UNITS]...",    delay: 240 },
     { pct: 20, label: "CALIBRATING DEFENSE GRID...",            delay: 260 },
     { pct: 28, label: "SYNCING BATTLE TOPOLOGIES [7 PATHS]...", delay: 280 },
     { pct: 36, label: "DECRYPTING ENEMY SIGNATURES...",         delay: 240 },
@@ -32,7 +32,8 @@
     { pct: 51, label: "LOADING STAGE SECTOR DATA [9 STAGES]...",delay: 260 },
     { pct: 58, label: "WEAPON TARGETING SYSTEMS READY...",      delay: 220 },
     { pct: 65, label: "GACHA RECRUIT POOL INITIALIZED...",      delay: 240 },
-    { pct: 72, label: "VORTEX & OMEGA SYSTEMS CALIBRATED...",   delay: 230 },
+    { pct: 70, label: "MATERIAL FORGE SYSTEMS ONLINE...",         delay: 230 },
+    { pct: 75, label: "TEMPORAL & STARFIELD WEAPONS ARMED...",    delay: 230 },
     { pct: 79, label: "ARCLIGHT / PULSAR / METEOR ARMED...",    delay: 230 },
     { pct: 86, label: "BIOME HAZARDS ARMED [VOID/STORM/ICE]...",delay: 240 },
     { pct: 93, label: "ORBITAL & ZERO POINT SECTORS LINKED...", delay: 230 },
