@@ -192,6 +192,9 @@ function devResetAllData() {
   playerData.stageCleared  = STAGE_TEMPLATES.map(() => false);
   playerData.augments      = AUGMENT_TEMPLATES.map(() => 0);
   playerData.enemyKills    = {};
+  playerData.materials     = {};
+  playerData.settings      = { lightMode:false, effectLevel:'high', autoSkip:false };
+  applySettingsGlobal();
   playerData.soundEnabled  = true;
   updateMeta();
   switchScreen('title');
@@ -245,6 +248,8 @@ function switchScreen(id) {
   if (id === 'augment') renderAugments();
   if (id === 'gacha') syncSoundToggleUI();
   if (id === 'archive') renderArchive();
+  if (id === 'forge') renderForge();
+  if (id === 'config') renderConfig();
   updateMeta();
 }
 
@@ -626,6 +631,78 @@ function drawPreviewShape(c2, id, tmpl, angle) {
       c2.restore();
     }
     c2.beginPath(); c2.arc(0,0,6,0,Math.PI*2); c2.fill();
+  } else if (id===23) {
+    c2.beginPath(); c2.arc(0,0,15,0,Math.PI*2); c2.fill(); c2.stroke();
+    c2.save();
+    c2.rotate(angle * 3);
+    c2.strokeStyle = tmpl.color + 'aa';
+    for (let i = 0; i < 3; i++) { c2.beginPath(); c2.arc(0, 0, 7 + i * 4, i, i + 2.2); c2.stroke(); }
+    c2.restore();
+  } else if (id===24) {
+    c2.beginPath(); c2.arc(0,0,10,0,Math.PI*2); c2.fill(); c2.stroke();
+    c2.save();
+    c2.rotate(angle * 2);
+    c2.lineWidth = 3;
+    c2.beginPath(); c2.moveTo(0,-18); c2.lineTo(0,18); c2.stroke();
+    c2.rotate(Math.PI/2);
+    c2.globalAlpha = 0.5;
+    c2.beginPath(); c2.moveTo(0,-13); c2.lineTo(0,13); c2.stroke();
+    c2.restore();
+  } else if (id===25) {
+    c2.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const a = -Math.PI/2 + Math.PI/5*i;
+      const r = i % 2 === 0 ? 17 : 7;
+      c2[i===0?'moveTo':'lineTo'](Math.cos(a)*r, Math.sin(a)*r);
+    }
+    c2.closePath(); c2.fill(); c2.stroke();
+  } else if (id===26) {
+    c2.beginPath();
+    c2.moveTo(19,0); c2.lineTo(2,-4); c2.lineTo(-17,-2);
+    c2.lineTo(-17,2); c2.lineTo(2,4);
+    c2.closePath(); c2.fill(); c2.stroke();
+  } else if (id===27) {
+    c2.save();
+    c2.rotate(angle * 1.5);
+    for (let arm = 0; arm < 2; arm++) {
+      c2.beginPath();
+      for (let t = 0; t < 14; t++) {
+        const a = arm * Math.PI + t * 0.42;
+        const r = 2 + t * 1.0;
+        c2[t===0?'moveTo':'lineTo'](Math.cos(a)*r, Math.sin(a)*r);
+      }
+      c2.globalAlpha = 0.75; c2.stroke();
+    }
+    c2.restore();
+    c2.beginPath(); c2.arc(0,0,4,0,Math.PI*2); c2.fill();
+  } else if (id===28) {
+    c2.beginPath(); c2.arc(0,0,16,0,Math.PI*2); c2.fill(); c2.stroke();
+    for (let i = 0; i < 12; i++) {
+      const a = Math.PI/6*i;
+      c2.beginPath();
+      c2.moveTo(Math.cos(a)*12, Math.sin(a)*12);
+      c2.lineTo(Math.cos(a)*16, Math.sin(a)*16);
+      c2.stroke();
+    }
+    c2.lineWidth = 2.5;
+    c2.beginPath(); c2.moveTo(0,0); c2.lineTo(Math.cos(angle*2)*9, Math.sin(angle*2)*9); c2.stroke();
+    c2.beginPath(); c2.moveTo(0,0); c2.lineTo(Math.cos(-angle)*13, Math.sin(-angle)*13); c2.stroke();
+  } else if (id===29) {
+    c2.beginPath();
+    c2.moveTo(-11,-16); c2.lineTo(11,-16); c2.lineTo(0,-1); c2.closePath();
+    c2.moveTo(-11,16); c2.lineTo(11,16); c2.lineTo(0,1); c2.closePath();
+    c2.fill(); c2.stroke();
+    const sy2 = ((angle * 30) % 12) - 6;
+    c2.fillStyle = tmpl.color;
+    c2.fillRect(-1, sy2, 2, 2);
+  } else if (id===30) {
+    c2.beginPath();
+    for (let i = 0; i < 16; i++) {
+      const a = Math.PI/8*i + angle*1.2;
+      const r = i % 2 === 0 ? 18 : 9;
+      c2[i===0?'moveTo':'lineTo'](Math.cos(a)*r, Math.sin(a)*r);
+    }
+    c2.closePath(); c2.fill(); c2.stroke();
   }
 }
 
@@ -805,9 +882,9 @@ function rollGacha(count) {
   for (let i = 0; i < count; i++) {
     const roll = Math.random();
     let pool;
-    if (roll < 0.03)      pool = CHAR_TEMPLATES.filter(c => c.rarity === 'SSR');
-    else if (roll < 0.21) pool = CHAR_TEMPLATES.filter(c => c.rarity === 'SR');
-    else                  pool = CHAR_TEMPLATES.filter(c => c.rarity === 'R');
+    if (roll < 0.03)      pool = CHAR_TEMPLATES.filter(c => c.rarity === 'SSR' && !c.craft);
+    else if (roll < 0.21) pool = CHAR_TEMPLATES.filter(c => c.rarity === 'SR' && !c.craft);
+    else                  pool = CHAR_TEMPLATES.filter(c => c.rarity === 'R' && !c.craft);
     const ch = pool[Math.floor(Math.random() * pool.length)];
     const isNew = !playerData.unlocked.includes(ch.id);
     if (isNew) playerData.unlocked.push(ch.id);
@@ -1038,6 +1115,8 @@ function serializePlayerData() {
     augments:      [...playerData.augments],
     enemyKills:    Object.assign({}, playerData.enemyKills),
     soundEnabled:  playerData.soundEnabled,
+    materials:     Object.assign({}, playerData.materials),
+    settings:      Object.assign({}, playerData.settings),
     savedAt:    new Date().toISOString()
   };
 }
@@ -1068,6 +1147,13 @@ function applyCloudData(data) {
     playerData.enemyKills = Object.assign({}, data.enemyKills);
   }
   if (typeof data.soundEnabled === 'boolean') playerData.soundEnabled = data.soundEnabled;
+  if (data.materials && typeof data.materials === 'object') {
+    playerData.materials = Object.assign({}, data.materials);
+  }
+  if (data.settings && typeof data.settings === 'object') {
+    playerData.settings = Object.assign({ lightMode:false, effectLevel:'high', autoSkip:false }, data.settings);
+  }
+  applySettingsGlobal();
   const maxParty = getMaxPartySize();
   if (playerData.party.length > maxParty) playerData.party = playerData.party.slice(0, maxParty);
   updateMeta();
@@ -1077,6 +1163,8 @@ function applyCloudData(data) {
   if (activeId === 'screen-augment') renderAugments();
   if (activeId === 'screen-gacha') syncSoundToggleUI();
   if (activeId === 'screen-archive') renderArchive();
+  if (activeId === 'screen-forge') renderForge();
+  if (activeId === 'screen-config') renderConfig();
 }
 
 function saveLocal() {
@@ -1399,3 +1487,136 @@ async function loadFromCloud(uid) {
     showToast('ロード失敗: ' + e.message, true);
   }
 }
+
+
+// ════════════════════════════════════════════════════════════
+//  FORGE — 素材工房（素材でキャラを制作）
+// ════════════════════════════════════════════════════════════
+function renderForge() {
+  const c = document.getElementById('forge-list');
+  if (!c) return;
+  c.innerHTML = '';
+  const matsBar = document.getElementById('forge-materials');
+  if (matsBar) {
+    matsBar.innerHTML = '';
+    MATERIAL_TEMPLATES.forEach(m => {
+      const n = getMaterialCount(m.id);
+      const chip = document.createElement('div');
+      chip.className = 'mat-chip';
+      chip.title = m.desc;
+      chip.innerHTML = `
+        <div class="mat-icon" style="background:${m.color};box-shadow:0 0 10px ${m.color}66;"></div>
+        <div>
+          <div class="mat-name">${m.nameJp} <span style="color:#445;font-size:0.55rem;">${m.name}</span></div>
+          <div class="mat-count" style="color:${n > 0 ? '#ffd700' : '#334'};">×${n}</div>
+        </div>`;
+      matsBar.appendChild(chip);
+    });
+  }
+  CHAR_TEMPLATES.filter(ch => ch.craft).forEach(ch => {
+    const unlocked = playerData.unlocked.includes(ch.id);
+    const rc = RARITY_COLORS[ch.rarity] || '#00e8ff';
+    const card = document.createElement('div');
+    card.className = 'char-card' + (unlocked ? ' selected' : '');
+    card.style.borderColor = unlocked ? ch.color : '';
+    const costRows = Object.entries(ch.craft).map(([mid, n]) => {
+      const t = MATERIAL_TEMPLATES.find(m => m.id === mid);
+      const have = getMaterialCount(mid);
+      const ok = have >= n;
+      return `<div class="craft-cost${ok ? ' ok' : ''}">${t ? t.nameJp : mid} <b>${have}/${n}</b></div>`;
+    }).join('');
+    card.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+        <div class="char-card-name" style="color:${ch.color};">${ch.name}</div>
+        <div style="font-family:var(--font-main);font-size:0.6rem;color:${rc};">${ch.rarity}</div>
+      </div>
+      <div class="char-card-type" style="color:${rc};">${ch.type}${unlocked ? ' — 制作済み' : ''}</div>
+      <div class="char-card-desc" style="min-height:44px;">${ch.desc}</div>
+      <div class="craft-costs">${costRows}</div>
+      <button class="btn-craft" ${unlocked || !canCraftUnit(ch) ? 'disabled' : ''} onclick="event.stopPropagation(); craftUnit(${ch.id})">
+        ${unlocked ? '✓ UNLOCKED' : '⚒ 制作する'}
+      </button>
+    `;
+    card.onclick = () => { if (playerData.unlocked.includes(ch.id)) openUnitPreview(ch.id); };
+    c.appendChild(card);
+  });
+}
+
+function craftUnit(id) {
+  const ch = CHAR_TEMPLATES[id];
+  if (!ch || !ch.craft) return;
+  if (playerData.unlocked.includes(id)) return;
+  if (!canCraftUnit(ch)) { alert("素材が不足しています。"); return; }
+  Object.entries(ch.craft).forEach(([mid, n]) => { playerData.materials[mid] -= n; });
+  playerData.unlocked.push(id);
+  showToast(`⚒ ${ch.name} の制作に成功！`);
+  autoSave('craft');
+  renderForge();
+}
+
+// ════════════════════════════════════════════════════════════
+//  CONFIG — 設定（軽量化モード / エフェクト量 / 自動スキップ）
+// ════════════════════════════════════════════════════════════
+function applySettingsGlobal() {
+  const s = playerData.settings || {};
+  document.body.classList.toggle('light-mode', !!s.lightMode);
+  window.__lightMode = !!s.lightMode;
+}
+
+function toggleLightMode() {
+  playerData.settings.lightMode = !playerData.settings.lightMode;
+  applySettingsGlobal();
+  autoSave('settings');
+  renderConfig();
+}
+
+function setEffectLevel(lv) {
+  playerData.settings.effectLevel = lv;
+  autoSave('settings');
+  renderConfig();
+}
+
+function toggleAutoSkip() {
+  playerData.settings.autoSkip = !playerData.settings.autoSkip;
+  autoSave('settings');
+  renderConfig();
+}
+
+function renderConfig() {
+  const c = document.getElementById('config-list');
+  if (!c) return;
+  const s = playerData.settings;
+  c.innerHTML = `
+    <div class="config-row">
+      <div>
+        <div class="config-name">LIGHTWEIGHT MODE — 軽量化モード</div>
+        <div class="config-desc">発光描画（シャドウ）・スキャンライン・背景演出を削減し、動作を軽くします。</div>
+      </div>
+      <button class="cfg-toggle${s.lightMode ? ' on' : ''}" onclick="toggleLightMode()">${s.lightMode ? 'ON' : 'OFF'}</button>
+    </div>
+    <div class="config-row">
+      <div>
+        <div class="config-name">EFFECT LEVEL — エフェクト量</div>
+        <div class="config-desc">パーティクル数・環境演出の量を LOW / MID / HIGH で調節します。</div>
+      </div>
+      <div class="seg-btns">
+        ${['low','mid','high'].map(l => `<button class="seg-btn${s.effectLevel === l ? ' active' : ''}" onclick="setEffectLevel('${l}')">${{low:'LOW',mid:'MID',high:'HIGH'}[l]}</button>`).join('')}
+      </div>
+    </div>
+    <div class="config-row">
+      <div>
+        <div class="config-name">AUTO SKIP — 自動スキップ</div>
+        <div class="config-desc">バトル中、敵が少なくなったタイミングで次ウェーブを自動で呼び出します。</div>
+      </div>
+      <button class="cfg-toggle${s.autoSkip ? ' on' : ''}" onclick="toggleAutoSkip()">${s.autoSkip ? 'ON' : 'OFF'}</button>
+    </div>
+    <div class="config-row">
+      <div>
+        <div class="config-name">SOUND — 効果音</div>
+        <div class="config-desc">ガチャ演出などの合成効果音を再生します。</div>
+      </div>
+      <button class="cfg-toggle${playerData.soundEnabled ? ' on' : ''}" onclick="toggleSound(); renderConfig();">${playerData.soundEnabled ? 'ON' : 'OFF'}</button>
+    </div>
+  `;
+}
+applySettingsGlobal();
