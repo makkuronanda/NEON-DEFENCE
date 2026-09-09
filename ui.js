@@ -290,6 +290,7 @@ function renderStages() {
         <span class="stage-badge" style="border:1px solid #2a3050;color:#668;">START: ${s.startMoney||150}C / ${s.startHp||20}HP</span>
         <span class="stage-badge" style="border:1px solid #2a3050;color:#668;">BOSS OVERDRIVE</span>
         <span class="stage-badge" style="border:1px solid ${s.color}44;color:${s.color}88;">PATH-${(s.pathId||0)+1}</span>
+        ${(() => { const d = (typeof STAGE_DROP_TABLE !== 'undefined') ? STAGE_DROP_TABLE.find(e => e.stage === s.id) : null; return d ? `<span class="stage-badge" style="border:1px solid #ffd70066;color:#ffd700cc;" title="クリア時に低確率でドロップ">⚑ DROP: ${CHAR_TEMPLATES[d.unitId].name}</span>` : ''; })()}
         ${bestWave > 0 ? `<span class="stage-badge" style="border:1px solid #ffd70044;color:#ffd700cc;">BEST WAVE ${bestWave}/${wavesLabel}</span>` : ''}
       </div>
     `;
@@ -359,7 +360,7 @@ function renderParty() {
         </div>
         <div class="char-card-type" style="color:${rc};">${ch.type}${equipped ? ' — EQUIPPED' : ''}</div>
         <div class="char-card-stats">
-          <div>ATK ${ch.damage}</div><div>RNG ${ch.range}</div>
+          <div>ATK ${getEffectiveAtk(ch)}</div><div>RNG ${ch.range}</div>
           <div>CD ${ch.cooldown}</div><div>LV.${playerData.baseLevels[ch.id]}</div>
         </div>
         <div class="char-card-desc">${ch.desc}</div>
@@ -369,11 +370,46 @@ function renderParty() {
       card.innerHTML = `
         <div class="char-card-name" style="color:#223;">??????</div>
         <div style="font-size:0.65rem;color:${rc};letter-spacing:2px;margin-top:8px;">LOCKED</div>
-        <div style="font-size:0.6rem;color:#1a2040;margin-top:4px;">${ch.type}</div>
+        <div style="font-size:0.6rem;color:#1a2040;margin-top:4px;">${ch.drop ? '⚑ STAGE DROP' : ch.type}</div>
       `;
     }
     ic.appendChild(card);
   });
+}
+
+// ── 実効ステータス計算 ──────────────────────────────────────
+// バトル中の Tower.getDamage() は Base LV（ガチャ重複で上昇する
+// 恒久強化）による倍率 bf を攻撃力に乗算しているが、タレット選択
+// 画面／プレビュー画面はテンプレートの生値 ch.damage をそのまま
+// 表示していたため、Base LV を上げた後にバトル中と数値が食い違って
+// 見えるズレがあった。表示側にも同じ bf 計算を適用して一致させる。
+function getEffectiveAtk(ch) {
+  const lv = (playerData.baseLevels && playerData.baseLevels[ch.id]) || 1;
+  const bf = 1 + (lv - 1) * 0.1;
+  return Math.round(ch.damage * bf);
+}
+
+// ── アップデートログ表示 ─────────────────────────────────────
+function openChangelog() {
+  const body = document.getElementById('cl-body');
+  if (body) {
+    body.innerHTML = (typeof CHANGELOG !== 'undefined' ? CHANGELOG : []).map(entry => `
+      <div class="cl-entry">
+        <div class="cl-entry-head">
+          <span class="cl-ver">VER. ${entry.version}</span>
+          <span class="cl-date">${entry.date}</span>
+        </div>
+        <ul class="cl-items">
+          ${entry.items.map(i => `<li>${i}</li>`).join('')}
+        </ul>
+      </div>
+    `).join('');
+  }
+  document.getElementById('changelog-overlay').classList.add('show');
+}
+
+function closeChangelog() {
+  document.getElementById('changelog-overlay').classList.remove('show');
 }
 
 function addParty(id) {
@@ -425,7 +461,7 @@ function openUnitPreview(id) {
   document.getElementById('up-type').textContent = ch.type;
   document.getElementById('up-desc').textContent = ch.desc;
   document.getElementById('up-stats').innerHTML = `
-    <div class="up-stat"><span>ATK</span><b>${ch.damage}</b></div>
+    <div class="up-stat"><span>ATK</span><b>${getEffectiveAtk(ch)}</b></div>
     <div class="up-stat"><span>RNG</span><b>${ch.range}</b></div>
     <div class="up-stat"><span>CD</span><b>${ch.cooldown}</b></div>
     <div class="up-stat"><span>COST</span><b>${getTowerCost(ch)}C</b></div>
@@ -703,6 +739,55 @@ function drawPreviewShape(c2, id, tmpl, angle) {
       c2[i===0?'moveTo':'lineTo'](Math.cos(a)*r, Math.sin(a)*r);
     }
     c2.closePath(); c2.fill(); c2.stroke();
+  } else if (id===31) {
+    // JUDGMENT — 天秤と光の剣
+    c2.beginPath(); c2.moveTo(0,-19); c2.lineTo(0,17); c2.stroke();
+    c2.beginPath(); c2.moveTo(-14,-12); c2.lineTo(14,-12); c2.stroke();
+    c2.beginPath(); c2.arc(-14,-5,5,0,Math.PI*2); c2.stroke();
+    c2.beginPath(); c2.arc(14,-5,5,0,Math.PI*2); c2.stroke();
+    c2.fillStyle = `rgba(255,238,120,${0.55 + Math.sin(angle*4)*0.45})`;
+    c2.beginPath(); c2.moveTo(0,3); c2.lineTo(5,17); c2.lineTo(-5,17); c2.closePath(); c2.fill();
+  } else if (id===32) {
+    // REAPER — 鎌の刃と柄
+    c2.save();
+    c2.rotate(angle * 2);
+    c2.lineWidth = 3;
+    c2.beginPath(); c2.arc(0,0,15,Math.PI*0.75,Math.PI*1.85); c2.stroke();
+    c2.restore();
+    c2.beginPath(); c2.moveTo(8,4); c2.lineTo(-11,17); c2.stroke();
+    c2.beginPath(); c2.arc(0,0,5,0,Math.PI*2); c2.fill();
+  } else if (id===33) {
+    // ECHO — ずれた二重の波紋
+    c2.globalAlpha = 0.9;
+    c2.beginPath(); c2.arc(-4,0,13,0,Math.PI*2); c2.stroke();
+    c2.globalAlpha = 0.4;
+    c2.beginPath(); c2.arc(5,0,13,0,Math.PI*2); c2.stroke();
+    c2.globalAlpha = 1;
+    c2.beginPath(); c2.arc(0,0,5,0,Math.PI*2); c2.fill();
+  } else if (id===34) {
+    // CHIMERA — 三つの面が巡る
+    c2.save();
+    c2.rotate(angle * 2.4);
+    for (let k = 0; k < 3; k++) {
+      const a = Math.PI*2/3*k;
+      c2.beginPath(); c2.arc(Math.cos(a)*9, Math.sin(a)*9, 7, 0, Math.PI*2); c2.stroke();
+    }
+    c2.restore();
+    c2.beginPath(); c2.arc(0,0,4,0,Math.PI*2); c2.fill();
+  } else if (id===35) {
+    // ZERO — 空虚の円環
+    c2.lineWidth = 3.5;
+    c2.beginPath(); c2.arc(0,0,15,0,Math.PI*2); c2.stroke();
+    c2.save();
+    c2.rotate(-angle * 1.5);
+    c2.globalAlpha = 0.5;
+    c2.lineWidth = 1;
+    c2.setLineDash([2,5]);
+    c2.beginPath(); c2.arc(0,0,20,0,Math.PI*2); c2.stroke();
+    c2.setLineDash([]);
+    c2.restore();
+    c2.fillStyle = '#ffffff';
+    c2.beginPath(); c2.arc(0,0,2.5,0,Math.PI*2); c2.fill();
   }
 }
 
@@ -882,9 +967,9 @@ function rollGacha(count) {
   for (let i = 0; i < count; i++) {
     const roll = Math.random();
     let pool;
-    if (roll < 0.03)      pool = CHAR_TEMPLATES.filter(c => c.rarity === 'SSR' && !c.craft);
-    else if (roll < 0.21) pool = CHAR_TEMPLATES.filter(c => c.rarity === 'SR' && !c.craft);
-    else                  pool = CHAR_TEMPLATES.filter(c => c.rarity === 'R' && !c.craft);
+    if (roll < 0.03)      pool = CHAR_TEMPLATES.filter(c => c.rarity === 'SSR' && !c.craft && !c.drop);
+    else if (roll < 0.21) pool = CHAR_TEMPLATES.filter(c => c.rarity === 'SR' && !c.craft && !c.drop);
+    else                  pool = CHAR_TEMPLATES.filter(c => c.rarity === 'R' && !c.craft && !c.drop);
     const ch = pool[Math.floor(Math.random() * pool.length)];
     const isNew = !playerData.unlocked.includes(ch.id);
     if (isNew) playerData.unlocked.push(ch.id);
@@ -1561,6 +1646,7 @@ function applySettingsGlobal() {
   const s = playerData.settings || {};
   document.body.classList.toggle('light-mode', !!s.lightMode);
   window.__lightMode = !!s.lightMode;
+  syncAutoSkipBattleUI();
 }
 
 function toggleLightMode() {
@@ -1580,6 +1666,25 @@ function toggleAutoSkip() {
   playerData.settings.autoSkip = !playerData.settings.autoSkip;
   autoSave('settings');
   renderConfig();
+  syncAutoSkipBattleUI();
+}
+
+// ── バトル中に呼び出す AUTO SKIP トグル（HUDボタン用）──────────
+// 設定画面（screen-config）に移動すると作戦が中断されてしまうため、
+// バトル画面から直接ON/OFFできるようにする。
+function toggleAutoSkipBattle() {
+  playerData.settings.autoSkip = !playerData.settings.autoSkip;
+  autoSave('settings');
+  syncAutoSkipBattleUI();
+  renderConfig(); // 設定画面が裏で開かれていても表示を同期
+}
+
+function syncAutoSkipBattleUI() {
+  const btn = document.getElementById('btn-autoskip');
+  if (!btn) return;
+  const on = !!(playerData.settings && playerData.settings.autoSkip);
+  btn.textContent = on ? 'AUTO: ON' : 'AUTO: OFF';
+  btn.classList.toggle('active', on);
 }
 
 function renderConfig() {
