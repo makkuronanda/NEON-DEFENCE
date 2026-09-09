@@ -145,7 +145,7 @@ const CHAR_TEMPLATES = [
   },
 
   // ── OVERDRIVE V — 宇宙・時間系ユニット ─────────────────────
-  { id:23, name:"SINGULARITY", type:"特異点型", rarity:"SSR", cost:300, color:"#9944ff", range:155, damage:25, cooldown:45, max:2,
+  { id:23, name:"SINGULARITY", type:"特異点型", rarity:"SSR", cost:300, color:"#9944ff", range:100, damage:25, cooldown:130, max:2,
     desc:"標的地点にブラックホールを生成。範囲内の敵を引力で引きずり寄せながら継続ダメージを与える宇宙兵器。",
     special:"blackhole" },
   { id:24, name:"QUASAR", type:"宇宙線型", rarity:"SR", cost:155, color:"#00ffee", range:210, damage:48, cooldown:65, max:3,
