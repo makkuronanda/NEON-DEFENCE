@@ -153,8 +153,9 @@
       <div class="title-stat"><div class="title-stat-num" id="ts-enemies">18</div><div class="title-stat-lbl">HOSTILES</div></div>
     </div>
     <button class="btn-start btn-start-pulse" onclick="switchScreen('stage')">▶ BOOT SYSTEM</button>
+    <button class="btn-changelog" onclick="openChangelog()">◈ UPDATE LOG</button>
   </div>
-  <div class="title-version" id="title-version" onclick="handleVersionTap()">VER. 3.2.0 / BUILD 2026</div>
+  <div class="title-version" id="title-version" onclick="handleVersionTap()">VER. 3.4.0 / BUILD 2026</div>
 </div>
 
 <!-- STAGE -->
@@ -306,6 +307,17 @@
   </div>
 </div>
 
+<!-- CHANGELOG OVERLAY（アップデートログ） -->
+<div id="changelog-overlay">
+  <div class="cl-panel">
+    <div class="cl-header">
+      <div class="cl-title">◈ UPDATE LOG — アップデートログ</div>
+      <button class="up-close" onclick="closeChangelog()">✕</button>
+    </div>
+    <div class="cl-body" id="cl-body"></div>
+  </div>
+</div>
+
 <!-- GAME -->
 <div id="screen-game" class="screen">
   <div class="game-hud">
@@ -315,6 +327,7 @@
     <div style="font-size:0.65rem;letter-spacing:2px;color:var(--cyan)" id="g-gimmick">GIMMICK: —</div>
     <div class="hud-speed-controls">
       <button class="btn-timestop" id="btn-timestop" onclick="activateTimeStop()" style="display:none">⏱ TIME STOP</button>
+      <button class="btn-speed" id="btn-autoskip" onclick="toggleAutoSkipBattle()">AUTO: OFF</button>
       <button class="btn-speed" id="btn-pause" onclick="togglePause()">⏸ PAUSE</button>
       <button class="btn-speed" id="btn-speed-1" onclick="setSpeed(1)">1x</button>
       <button class="btn-speed" id="btn-speed-2" onclick="setSpeed(2)">2x</button>
