@@ -19,6 +19,54 @@ const playerData = {
 // Tower max upgrade level
 const TOWER_MAX_LV = 5;
 
+// ── アップデートログ ─────────────────────────────────────────
+// 新しい項目を配列の先頭に追加してください（新しい順で表示されます）。
+const CHANGELOG = [
+  {
+    version: "3.5.0",
+    date: "2026-09-09",
+    items: [
+      "【新ユニット】ステージドロップユニット5体を追加（特定ステージクリア時に低確率で獲得。ステージ選択画面に⚑ DROP表示が出る）",
+      "JUDGMENT（審判型）: 刻印を刻み天から光の大剣を落下させる超遅延砲 — VOID LABYRINTHでドロップ",
+      "REAPER（死霊型）: 体力18%以下の雑魚敵を装甲・シールド無視で即撃破する死神 — ZERO POINTでドロップ",
+      "ECHO（残響型）: 弾丸の残響が時差追撃する — DESERT MATRIXでドロップ",
+      "CHIMERA（模倣型）: 周囲の味方タワーの攻撃を模倣して放つ — STORM NEXUSでドロップ",
+      "ZERO（消去型）: 最大体力比例・防御全無視の領域消去ダメージ — GLACIAL BASTIONでドロップ",
+      "ドロップユニットはガチャでは排出されず、該当ステージのクリア報酬のみで獲得できる"
+    ]
+  },
+  {
+    version: "3.4.0",
+    date: "2026-09-09",
+    items: [
+      "【不具合修正】EVOLVEボタンが敵撃破のたびに再描画され、強化直後などタイミングによってはタップが反応しないことがあった問題を修正（ボタンのDOM要素を選択タワーが変わるまで使い回すよう変更）",
+      "【不具合修正】タワーが最大強化（MAX）になった際、EVOLVEボタンの表示幅が縮んで隣のSELLボタンの位置がズレ、誤ってSELLを押してしまうことがあった問題を修正（両ボタンの幅を固定）",
+      "【不具合修正】タワー選択パネルのTARGET（狙い方）ボタンが、スマートフォンなど画面幅の狭い端末で画面外にはみ出し操作できないことがあった問題を修正（自動的に折り返して表示するよう変更）"
+    ]
+  },
+  {
+    version: "3.3.0",
+    date: "2026-09-09",
+    items: [
+      "AUTO SKIPをバトル中にHUDから直接ON/OFF切替できるように変更（設定画面に移動して作戦を中断する必要がなくなりました）",
+      "AUTO SKIP ONの挙動を変更：CALL WAVEが可能になった瞬間に即座に次ウェーブを呼び出すように調整（以前は敵の残数が少なくなるまで待機していました）",
+      "TEMPUS（TIME STOP）のクールタイムを延長（約15秒→25秒）",
+      "METEORの着弾までの予告時間を延長し、回避・迎撃の猶予を追加",
+      "タレット選択／プレビュー画面のATK表記が、バトル中の実際の攻撃力（Base LV補正込み）と異なって見える表示不具合を修正",
+      "【不具合修正】METEORの着弾予告リング描画で、特定条件下でリングの半径が負の値になり描画処理が停止することがあった問題を修正"
+    ]
+  },
+  {
+    version: "3.2.0",
+    date: "2026-06-09",
+    items: [
+      "OVERDRIVE V — 宇宙・時間系ユニット（SINGULARITY / QUASAR / STARFALL / LUX）を追加",
+      "工房制作ユニット（ASTRA / CHRONO / TEMPUS / NOVA）を追加",
+      "軽量化モード・エフェクト量設定を追加"
+    ]
+  }
+];
+
 const CHAR_TEMPLATES = [
   // ── 既存ユニット（序盤救済 & 全体調整）─────────────────────
   { id:0,  name:"BLASTER",   type:"連射型",   rarity:"R",   cost:35,  color:"#00e8ff", range:130, damage:18,  cooldown:16,  max:10, desc:"プラズマを連射。序盤の主力ユニット。" },
@@ -127,6 +175,23 @@ const CHAR_TEMPLATES = [
     desc:"周期的に超新星爆発を起こし、周囲の敵を灼熱の衝撃波で薙ぎ払う。爆心地は小さな恒星のように輝く。",
     special:"supernova",
     craft:{ novacore:5, stardust:20 } },
+
+  // ── ステージドロップユニット（特定ステージのクリア時に低確率で獲得）──
+  { id:31, name:"JUDGMENT", type:"審判型", rarity:"SSR", cost:290, color:"#ffee55", range:230, damage:210, cooldown:150, max:2,
+    desc:"標的に裁きの刻印を刻み、数秒後に天から光の大剣を落下させる超遅延審判砲。刻印の間、対象は被ダメージが増大する。",
+    special:"judgment", drop:true },
+  { id:32, name:"REAPER", type:"死霊型", rarity:"SSR", cost:260, color:"#99ff44", range:170, damage:70, cooldown:55, max:2,
+    desc:"魂を刈り取る大鎌を振るう死神タレット。体力が18%を切った雑魚敵は装甲もシールドも無視して即座に魂を刈り取られる（ボスは対象外）。",
+    special:"reaper", drop:true },
+  { id:33, name:"ECHO", type:"残響型", rarity:"SR", cost:120, color:"#66ffee", range:150, damage:34, cooldown:45, max:4,
+    desc:"発射した弾丸の“残響”が時差を置いて同じ標的へ追撃する。2発目は威力45%だが狙いは確実に同じ敵へ向かう。",
+    special:"echo", drop:true },
+  { id:34, name:"CHIMERA", type:"模倣型", rarity:"SSR", cost:240, color:"#ff99cc", range:160, damage:30, cooldown:40, max:2,
+    desc:"周囲の味方タワーの攻撃を1つだけ模倣して放つ。模倣した攻撃は威力80%だが、このタレット自体のリロードは常に短い。",
+    special:"mimic", drop:true },
+  { id:35, name:"ZERO", type:"消去型", rarity:"SSR", cost:330, color:"#ffffff", range:140, damage:25, cooldown:70, max:1,
+    desc:"領域内の敵の存在そのものを毎ティック削り取る。最大体力に比例した確定ダメージで、装甲・シールド・軽減をすべて無視する。",
+    special:"zerofield", drop:true },
 ];
 
 const RARITY_COLORS = { R: "#00e8ff", SR: "#cc44ff", SSR: "#ffd700" };
@@ -397,4 +462,25 @@ function formatGainedMaterials(gained) {
 function canCraftUnit(ch) {
   if (!ch.craft) return false;
   return Object.entries(ch.craft).every(([mid, n]) => getMaterialCount(mid) >= n);
+}
+
+// ── ステージドロップテーブル（各ステージに対応する希少ドロップユニット）──
+const STAGE_DROP_TABLE = [
+  { stage:1, unitId:33 },   // DESERT MATRIX     → ECHO
+  { stage:3, unitId:31 },   // VOID LABYRINTH    → JUDGMENT
+  { stage:5, unitId:34 },   // STORM NEXUS       → CHIMERA
+  { stage:6, unitId:35 },   // GLACIAL BASTION   → ZERO
+  { stage:8, unitId:32 },   // ZERO POINT        → REAPER
+];
+// ステージクリア時に低確率でドロップユニットを獲得する。
+// 既に解放済みの場合は限界突破（Base LV+1）に変換される。
+function grantStageDrop(stage, chance = 0.08) {
+  const entry = STAGE_DROP_TABLE.find(e => e.stage === stage.id);
+  if (!entry) return null;
+  if (Math.random() >= chance) return null;
+  const ch = CHAR_TEMPLATES[entry.unitId];
+  const isNew = !playerData.unlocked.includes(ch.id);
+  if (isNew) playerData.unlocked.push(ch.id);
+  else playerData.baseLevels[ch.id]++;
+  return { name: ch.name, color: ch.color, isNew };
 }
