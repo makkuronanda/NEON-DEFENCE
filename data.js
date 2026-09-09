@@ -113,7 +113,7 @@ const CHAR_TEMPLATES = [
     desc:"命中時に高確率で敵を短時間スタンさせる衝撃波。足止けに優れる。",
     special:"stun"
   },
-  { id:16, name:"METEOR",    type:"砲撃型",   rarity:"SSR", cost:250, color:"#ff4400", range:240, damage:195, cooldown:120, max:2,
+  { id:16, name:"METEOR",    type:"砲撃型",   rarity:"SSR", cost:300, color:"#ff4400", range:220, damage:170, cooldown:135, max:2,
     desc:"着弾まで時間差のある大質量弾を撃ち込み、着弾点周辺を壊滅させる超広範囲砲撃。強化済: 着弾加速・範囲拡大・LV3で2連撃・燃焼付与。",
     special:"artillery"
   },
