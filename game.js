@@ -8,6 +8,11 @@ const ROWS   = canvas.height / GS;
 let battlePath = [];
 let pathCells  = new Set();
 let effects    = [];
+// EVOLVE/SELLボタンが敵撃破のたびに再生成され、タップ直後の入力を
+// 取りこぼす不具合の対策：inspect-panel内のボタンDOMを毎フレーム
+// 作り直さず、選択中タワーが変わった時だけ再構築し、それ以外は
+// 数値・状態だけを差分更新する。
+let inspectedTower = null;
 
 // ── 演出設定（軽量化モード / エフェクト量）──────────────────
 function fxLevel()  { return (playerData.settings && playerData.settings.effectLevel) || 'high'; }
@@ -68,12 +73,14 @@ function startBattle(stageData) {
     paused: false,
     usedRevive: false,      // OVERDRIVE RESERVES 使用済みフラグ
     timeStopT: 0, timeStopCd: 0,   // TIME STOP スキル
-    blackholes: []                  // SINGULARITY ブラックホール
+    blackholes: [],                 // SINGULARITY ブラックホール
+    judgments: []                    // JUDGMENT 裁きの刻印
   };
 
   document.getElementById('g-gimmick').innerText = 'GIMMICK: ' + stageData.gimmick;
   document.getElementById('game-modal').style.display = 'none';
   effects = [];
+  inspectedTower = null;
   initGameUI();
   updateGameUI();
   if (animFrameId) cancelAnimationFrame(animFrameId);
@@ -144,34 +151,16 @@ function updateGameUI() {
 
   const panel = document.getElementById('inspect-panel');
   if (gameState.selectedTower) {
-    const t  = gameState.selectedTower;
-    const uc = t.getUpgradeCost();
-    const atMax = t.lv >= TOWER_MAX_LV;
-    const sellAmt = Math.floor(t.tmpl.cost * 0.6);
-    const heatBar = t.heat != null
-      ? `<div style="font-size:0.6rem;color:#ff8800;margin-top:2px;">HEAT: ${'▮'.repeat(Math.floor(t.heat/20))}${'▯'.repeat(5-Math.floor(t.heat/20))} ${Math.floor(t.heat)}%</div>`
-      : '';
-    const specialNote = t.tmpl.special === 'repair'
-      ? `<div style="font-size:0.58rem;color:#00ff88;margin-top:2px;">NEXT REPAIR: ${Math.ceil(t.cd/60)}s</div>` : '';
-    panel.innerHTML = `
-      <div style="line-height:1.5;font-size:0.72rem;">
-        <span style="font-family:var(--font-main);color:${t.tmpl.color}">${t.tmpl.name}</span>
-        <span style="color:#557;"> [LV${t.lv}/${TOWER_MAX_LV}]</span><br>
-        ATK:<span style="color:var(--green)"> ${Math.floor(t.getDamage())}</span>　
-        RNG: <span style="color:#aab">${Math.floor(t.getRange())}</span>
-      </div>
-      ${heatBar}${specialNote}
-      <div style="display:flex;gap:6px;align-items:center;">
-        <button class="btn-evolve" onclick="upgradeTower()" ${(atMax || gameState.money < uc) ? 'disabled' : ''}>${atMax ? 'MAX' : 'EVOLVE ' + uc + 'C'}</button>
-        <button class="btn-sell" onclick="sellTower()">SELL ${sellAmt}C</button>
-      </div>
-      <div style="display:flex;gap:4px;align-items:center;margin-top:4px;">
-        <span style="font-size:0.58rem;color:#446;letter-spacing:1px;">TARGET:</span>
-        ${['first','last','strongest','weakest'].map(m=>`<button class="btn-target${gameState.targetMode===m?' active':''}" onclick="setTargetMode('${m}')">${{first:'前線',last:'最後',strongest:'最強',weakest:'最弱'}[m]}</button>`).join('')}
-      </div>
-    `;
-  } else {
+    const t = gameState.selectedTower;
+    if (inspectedTower !== t) {
+      buildInspectPanel(panel, t);
+      inspectedTower = t;
+    }
+    refreshInspectPanel(t);
+  } else if (inspectedTower !== null || !panel.dataset.empty) {
     panel.innerHTML = `<span style="color:#446;font-size:0.65rem;letter-spacing:1px;">タップしてタワー配置 / タワーをタップで選択・強化（もう一度タップで解除）</span>`;
+    panel.dataset.empty = '1';
+    inspectedTower = null;
   }
 
   if (gameState.hp <= 0 && gameState.state === 'playing') {
@@ -217,6 +206,68 @@ function updateGameUI() {
   if (typeof devPanelOpen !== 'undefined' && devPanelOpen && typeof renderDevPanel === 'function') renderDevPanel();
 }
 
+// ── タワー選択パネル：DOM構造の初回構築（タワー切替時のみ）──────
+// EVOLVE/SELLボタンをタップ直前・直後に再生成すると、モバイル端末
+// では要素が入れ替わったタイミングでタップイベントが取りこぼされ
+// 「反応が悪い」現象が起きる。選択中タワーが変わらない限りボタン
+// のDOM要素自体は使い回し、refreshInspectPanel() で中身だけ更新する。
+function buildInspectPanel(panel, t) {
+  const sellAmt = Math.floor(t.tmpl.cost * 0.6);
+  panel.dataset.empty = '';
+  panel.innerHTML = `
+    <div style="line-height:1.5;font-size:0.72rem;">
+      <span style="font-family:var(--font-main);color:${t.tmpl.color}">${t.tmpl.name}</span>
+      <span style="color:#557;"> [LV<span id="insp-lv"></span>/${TOWER_MAX_LV}]</span><br>
+      ATK:<span style="color:var(--green)" id="insp-atk"></span>　
+      RNG: <span style="color:#aab" id="insp-rng"></span>
+    </div>
+    <div id="insp-heat"></div>
+    <div id="insp-repair"></div>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px;">
+      <button class="btn-evolve" id="btn-evolve" onclick="upgradeTower()"></button>
+      <button class="btn-sell" id="btn-sell" onclick="sellTower()">SELL ${sellAmt}C</button>
+    </div>
+    <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-top:4px;">
+      <span style="font-size:0.58rem;color:#446;letter-spacing:1px;">TARGET:</span>
+      ${['first','last','strongest','weakest'].map(m=>`<button class="btn-target" data-mode="${m}" onclick="setTargetMode('${m}')">${{first:'前線',last:'最後',strongest:'最強',weakest:'最弱'}[m]}</button>`).join('')}
+    </div>
+  `;
+}
+
+// ── タワー選択パネル：数値・状態の差分更新（毎フレーム呼び出し可）──
+function refreshInspectPanel(t) {
+  const lvEl = document.getElementById('insp-lv');
+  if (lvEl) lvEl.textContent = t.lv;
+  const atkEl = document.getElementById('insp-atk');
+  if (atkEl) atkEl.textContent = ' ' + Math.floor(t.getDamage());
+  const rngEl = document.getElementById('insp-rng');
+  if (rngEl) rngEl.textContent = Math.floor(t.getRange());
+
+  const heatWrap = document.getElementById('insp-heat');
+  if (heatWrap) {
+    heatWrap.innerHTML = t.heat != null
+      ? `<div style="font-size:0.6rem;color:#ff8800;margin-top:2px;">HEAT: ${'▮'.repeat(Math.floor(t.heat/20))}${'▯'.repeat(5-Math.floor(t.heat/20))} ${Math.floor(t.heat)}%</div>`
+      : '';
+  }
+  const repairWrap = document.getElementById('insp-repair');
+  if (repairWrap) {
+    repairWrap.innerHTML = t.tmpl.special === 'repair'
+      ? `<div style="font-size:0.58rem;color:#00ff88;margin-top:2px;">NEXT REPAIR: ${Math.ceil(t.cd/60)}s</div>` : '';
+  }
+
+  const uc = t.getUpgradeCost();
+  const atMax = t.lv >= TOWER_MAX_LV;
+  const evolveBtn = document.getElementById('btn-evolve');
+  if (evolveBtn) {
+    evolveBtn.disabled = atMax || gameState.money < uc;
+    evolveBtn.textContent = atMax ? 'MAX' : `EVOLVE ${uc}C`;
+  }
+
+  document.querySelectorAll('#inspect-panel .btn-target').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === gameState.targetMode);
+  });
+}
+
 // ── ステージ記録（最高到達ウェーブ / クリア済みフラグ）を更新 ──
 function recordStageResult(wavesReached, cleared) {
   const id = gameState.stage.id;
@@ -253,6 +304,8 @@ function updateSpeedControlsUI() {
   });
   const overlay = document.getElementById('pause-overlay');
   if (overlay) overlay.style.display = gameState.paused ? 'flex' : 'none';
+
+  if (typeof syncAutoSkipBattleUI === 'function') syncAutoSkipBattleUI();
 
   // CALL WAVE ボタンの有効状態
   const callBtn = document.getElementById('btn-call-wave');
@@ -1123,13 +1176,14 @@ class Tower {
 
     } else if (sp === 'artillery') {
       // METEOR — 強化: 着弾加速・範囲拡大・LV3で2連撃
+      // 着弾までの予告時間を延長（旧28/46 → 40/64）し、回避・迎撃の猶予を増やす
       gameState.meteorStrikes.push({
-        x: tgt.x, y: tgt.y, timer: 28, dmg: this.getDamage(), r: 135, color: this.tmpl.color
+        x: tgt.x, y: tgt.y, timer: 40, dmg: this.getDamage(), r: 135, color: this.tmpl.color
       });
       if (this.lv >= 3) {
         gameState.meteorStrikes.push({
           x: tgt.x + (Math.random()-0.5)*80, y: tgt.y + (Math.random()-0.5)*80,
-          timer: 46, dmg: this.getDamage() * 0.7, r: 110, color: '#ffaa00'
+          timer: 64, dmg: this.getDamage() * 0.7, r: 110, color: '#ffaa00'
         });
       }
       gameState.floatingTexts.push(new FloatText(this.x, this.y, 'METEOR INCOMING', this.tmpl.color));
@@ -1248,6 +1302,61 @@ class Tower {
       addEffect({ type:'supernova', x:this.x, y:this.y, t:26, color:this.tmpl.color });
       gameState.floatingTexts.push(new FloatText(this.x, this.y, 'SUPERNOVA', '#ffaa66'));
       gameState.screenShake = Math.max(gameState.screenShake, 16);
+
+    } else if (sp === 'judgment') {
+      // JUDGMENT — 裁きの刻印 → 遅延して天から光の大剣落下
+      gameState.judgments.push({ tgt, t: 75, dmg: this.getDamage(), src: this });
+      spawnParticles(tgt.x, tgt.y, '#ffee55', 10);
+      gameState.floatingTexts.push(new FloatText(tgt.x, tgt.y, 'JUDGED', '#ffee55'));
+
+    } else if (sp === 'reaper') {
+      // REAPER — 体力18%以下の非ボスは装甲・シールド無視で即魂刈り
+      const threshold = tgt.maxHp * 0.18;
+      if (!tgt.isBoss && (tgt.hp + (tgt.shield || 0)) <= threshold) {
+        tgt.shield = 0;
+        tgt.hp = 0;
+        gameState.floatingTexts.push(new FloatText(tgt.x, tgt.y, 'SOUL REAPED', '#99ff44'));
+        addEffect({ type:'reap', x:tgt.x, y:tgt.y, t:14, color:this.tmpl.color });
+      } else {
+        gameState.projectiles.push(new Projectile(this.x, this.y, tgt, this));
+      }
+
+    } else if (sp === 'echo') {
+      // ECHO — 残響弾が時差を置いて同じ標的へ追撃（威力45%）
+      gameState.projectiles.push(new Projectile(this.x, this.y, tgt, this));
+      const captTgt = tgt, captThis = this;
+      setTimeout(() => {
+        if (gameState && gameState.state === 'playing' && captTgt.hp > 0) {
+          const echoSrc = { tmpl: captThis.tmpl, lv: captThis.lv,
+            getDamage: () => captThis.getDamage() * 0.45 };
+          gameState.projectiles.push(new Projectile(captThis.x, captThis.y, captTgt, echoSrc));
+        }
+      }, 650);
+
+    } else if (sp === 'mimic') {
+      // CHIMERA — 近くの味方タワーの攻撃を1つ模倣（威力80%）
+      const donors = gameState.towers.filter(t2 => t2 !== this && t2.tmpl.damage > 0
+        && Math.hypot(t2.x - this.x, t2.y - this.y) <= 170);
+      if (donors.length > 0) {
+        const donor = donors[Math.floor(Math.random() * donors.length)];
+        const mimicSrc = { tmpl: donor.tmpl, lv: donor.lv,
+          getDamage: () => donor.getDamage() * 0.8 };
+        gameState.projectiles.push(new Projectile(this.x, this.y, tgt, mimicSrc));
+        gameState.floatingTexts.push(new FloatText(this.x, this.y, `MIMIC:${donor.tmpl.name}`, donor.tmpl.color));
+      } else {
+        gameState.projectiles.push(new Projectile(this.x, this.y, tgt, this));
+      }
+
+    } else if (sp === 'zerofield') {
+      // ZERO — 最大体力比例・防御無視の領域消去ダメージ
+      const zr = this.getRange();
+      gameState.enemies.forEach(e => {
+        if (Math.hypot(e.x - this.x, e.y - this.y) <= zr) {
+          e.hp -= Math.max(1, e.maxHp * 0.012);
+          spawnParticles(e.x, e.y, '#ffffff', 2);
+        }
+      });
+      addEffect({ type:'zerofield', x:this.x, y:this.y, r:zr, t:12, color:this.tmpl.color });
 
     } else {
       gameState.projectiles.push(new Projectile(this.x, this.y, tgt, this));
@@ -1578,6 +1687,56 @@ class Tower {
         ctx[i===0?'moveTo':'lineTo'](Math.cos(a)*r, Math.sin(a)*r);
       }
       ctx.closePath(); ctx.fill(); ctx.stroke();
+    } else if (id===31) {
+      // JUDGMENT — 天秤と光の剣
+      ctx.beginPath(); ctx.moveTo(0,-16); ctx.lineTo(0,14); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-12,-10); ctx.lineTo(12,-10); ctx.stroke();
+      ctx.beginPath(); ctx.arc(-12,-4,4,0,Math.PI*2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(12,-4,4,0,Math.PI*2); ctx.stroke();
+      const jg = 0.55 + Math.sin(gameState.frame*0.15)*0.45;
+      ctx.fillStyle = `rgba(255,238,120,${jg})`;
+      ctx.beginPath(); ctx.moveTo(0,2); ctx.lineTo(4,14); ctx.lineTo(-4,14); ctx.closePath(); ctx.fill();
+    } else if (id===32) {
+      // REAPER — 鎌の刃と柄
+      ctx.save();
+      ctx.rotate(gameState.frame * 0.06);
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(0,0,13,Math.PI*0.75,Math.PI*1.85); ctx.stroke();
+      ctx.restore();
+      ctx.beginPath(); ctx.moveTo(7,3); ctx.lineTo(-9,14); ctx.stroke();
+      ctx.beginPath(); ctx.arc(0,0,4,0,Math.PI*2); ctx.fill();
+    } else if (id===33) {
+      // ECHO — ずれた二重の波紋
+      ctx.globalAlpha = 0.9;
+      ctx.beginPath(); ctx.arc(-4,0,11,0,Math.PI*2); ctx.stroke();
+      ctx.globalAlpha = 0.4;
+      ctx.beginPath(); ctx.arc(5,0,11,0,Math.PI*2); ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.beginPath(); ctx.arc(0,0,4,0,Math.PI*2); ctx.fill();
+    } else if (id===34) {
+      // CHIMERA — 三つの面が巡る
+      ctx.save();
+      ctx.rotate(gameState.frame * 0.08);
+      for (let k = 0; k < 3; k++) {
+        const a = Math.PI*2/3*k;
+        ctx.beginPath(); ctx.arc(Math.cos(a)*8, Math.sin(a)*8, 6, 0, Math.PI*2); ctx.stroke();
+      }
+      ctx.restore();
+      ctx.beginPath(); ctx.arc(0,0,3.5,0,Math.PI*2); ctx.fill();
+    } else if (id===35) {
+      // ZERO — 空虚の円環
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0,0,13,0,Math.PI*2); ctx.stroke();
+      ctx.save();
+      ctx.rotate(-gameState.frame * 0.05);
+      ctx.globalAlpha = 0.5;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2,5]);
+      ctx.beginPath(); ctx.arc(0,0,17,0,Math.PI*2); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(0,0,2,0,Math.PI*2); ctx.fill();
     }
   }
 }
@@ -2162,9 +2321,12 @@ function gameTick() {
       const reward = 300 + (gameState.stage.id >= 3 ? 150 : 0);
       playerData.crystals += reward;
       const gained = grantStageMaterials(gameState.stage, gameState.wave);
+      const drop = grantStageDrop(gameState.stage);
       recordStageResult(gameState.wave, true);
       if (typeof autoSave === 'function') autoSave('mission-clear');
-      showModal("MISSION COMPLETE", `セクターコアの完全防衛に成功。報酬: ${reward}コア結晶` + (gained.length ? `\n回収素材: ${formatGainedMaterials(gained)}` : ''), "var(--green)");
+      let dropMsg = '';
+      if (drop) dropMsg = `\n⚑ 特別回収: ${drop.name} ${drop.isNew ? 'を発見！（ドロップユニットを解放）' : 'の戦闘データを再取得（LIMIT BREAK）'}`;
+      showModal("MISSION COMPLETE", `セクターコアの完全防衛に成功。報酬: ${reward}コア結晶` + (gained.length ? `\n回収素材: ${formatGainedMaterials(gained)}` : '') + dropMsg, "var(--green)");
       updateMeta();
     }
   }
@@ -2210,7 +2372,10 @@ function gameTick() {
     ctx.strokeStyle = m.color || '#ff4400';
     ctx.globalAlpha = 0.4 + 0.35 * Math.sin(gameState.frame * 0.35);
     ctx.lineWidth = 2; ctx.setLineDash([7,5]);
-    ctx.beginPath(); ctx.arc(m.x, m.y, m.r * Math.min(1, 1.2 - m.timer/42), 0, Math.PI*2); ctx.stroke();
+    // NOTE: 元コードは m.timer が大きい（着弾までが長い）と 1.2 - m.timer/42 が
+    // 負の値になり、ctx.arc() に負の半径を渡して例外(IndexSizeError)が発生し、
+    // 描画ループごと停止するバグがあった。Math.max(0, …) で下限をクランプして防止。
+    ctx.beginPath(); ctx.arc(m.x, m.y, m.r * Math.max(0, Math.min(1, 1.2 - m.timer/42)), 0, Math.PI*2); ctx.stroke();
     ctx.setLineDash([]);
     ctx.restore();
     if (m.timer <= 0 && !m.resolved) {
@@ -2222,6 +2387,36 @@ function gameTick() {
     }
   });
   gameState.meteorStrikes = gameState.meteorStrikes.filter(m => !m.resolved);
+
+  // JUDGMENT — 裁きの刻印が満ちると天から光の大剣が落下
+  if (!gameState.judgments) gameState.judgments = [];
+  gameState.judgments.forEach(j => {
+    j.t--;
+    ctx.save();
+    if (j.tgt.hp > 0) {
+      // 刻印リング
+      ctx.strokeStyle = '#ffee55';
+      ctx.globalAlpha = 0.5 + 0.4 * Math.sin(gameState.frame * 0.3);
+      ctx.lineWidth = 1.5; ctx.setLineDash([3,4]);
+      ctx.beginPath(); ctx.arc(j.tgt.x, j.tgt.y, j.tgt.sz + 12, 0, Math.PI*2); ctx.stroke();
+      ctx.setLineDash([]);
+      // 徐々に降りてくる光の剣
+      const prog = 1 - Math.max(0, j.t) / 75;
+      const swordY = j.tgt.y - 170 + prog * 170;
+      ctx.shadowBlur = 20; ctx.shadowColor = '#ffee55';
+      ctx.fillStyle = `rgba(255,238,120,${0.35 + prog * 0.6})`;
+      ctx.fillRect(j.tgt.x - 3, swordY - 32, 6, 32);
+      ctx.fillRect(j.tgt.x - 10, swordY - 32, 20, 4);
+    }
+    ctx.restore();
+    if (j.t <= 0 && !j.resolved) {
+      j.resolved = true;
+      addEffect({ type:'explosion', x:j.tgt.x, y:j.tgt.y, r:80, t:16 });
+      if (j.tgt.hp > 0) j.tgt.takeDamage(j.dmg);
+      gameState.screenShake = Math.max(gameState.screenShake, 10);
+    }
+  });
+  gameState.judgments = gameState.judgments.filter(j => !j.resolved);
 
   // TIME STOP 制御
   if (gameState.timeStopT > 0) {
@@ -2297,6 +2492,9 @@ function gameTick() {
         if (Math.random() < 0.35) { addMaterial('novacore', 1);   drops.push('NOVA CORE'); }
         if (Math.random() < 0.25) { addMaterial('chronogear', 1); drops.push('CHRONO GEAR'); }
         if (drops.length) gameState.floatingTexts.push(new FloatText(e.x, e.y - 24, '⬡ ' + drops.join(' + '), '#ffd700'));
+        // ステージドロップユニットのごく低確率ボーナスドロップ（対応ステージのみ）
+        const bdrop = grantStageDrop(gameState.stage, 0.05);
+        if (bdrop) gameState.floatingTexts.push(new FloatText(e.x, e.y - 44, `⚑ DROP: ${bdrop.name}`, '#ffd700'));
       }
 
       // SPLITTER — spawns 2 SWARM enemies on death
@@ -2430,6 +2628,21 @@ function gameTick() {
       ctx.globalAlpha = fp;
       ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(ef.x, ef.y, 50 * (1 - fp) + 6, 0, Math.PI*2); ctx.stroke();
+    } else if (ef.type === 'reap') {
+      // REAPER — 鎌が空を裂く斬撃弧
+      const p = Math.max(0, Math.min(1, ef.t / 14));
+      ctx.strokeStyle = ef.color || '#99ff44'; ctx.shadowColor = ef.color || '#99ff44';
+      ctx.lineWidth = 2.5; ctx.globalAlpha = p;
+      ctx.beginPath(); ctx.arc(ef.x, ef.y, 34 * (1 - p) + 10, -0.7, 1.0); ctx.stroke();
+      ctx.globalAlpha = p * 0.5; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(ef.x, ef.y, 44 * (1 - p) + 16, -0.4, 0.7); ctx.stroke();
+    } else if (ef.type === 'zerofield') {
+      // ZERO — 存在を削る白い円環
+      const p = Math.max(0, Math.min(1, ef.t / 12));
+      ctx.strokeStyle = '#ffffff'; ctx.shadowColor = '#ffffff';
+      ctx.globalAlpha = p * 0.6; ctx.lineWidth = 1.5; ctx.setLineDash([2,6]);
+      ctx.beginPath(); ctx.arc(ef.x, ef.y, ef.r, 0, Math.PI*2); ctx.stroke();
+      ctx.setLineDash([]);
     } else if (ef.type === 'muzzle') {
       const mp = Math.max(0, ef.t / 5);
       ctx.fillStyle = ef.color || '#fff';
@@ -2446,10 +2659,10 @@ function gameTick() {
   gameState.floatingTexts.forEach(t => { t.update(); t.draw(); });
   gameState.floatingTexts = gameState.floatingTexts.filter(t => t.life > 0);
 
-  // 自動スキップ（設定ON時、敵が少ないタイミングで次ウェーブを自動呼出し）
+  // 自動スキップ（設定ON時、CALL WAVEが可能になった瞬間に自動で呼び出す）
   if (playerData.settings && playerData.settings.autoSkip && gameState.state === 'playing') {
     const asw = 500 + gameState.wave * 30;
-    if (gameState.wave < gameState.stage.waves && gameState.waveTimer >= asw && gameState.enemies.length <= 2) {
+    if (gameState.wave < gameState.stage.waves && gameState.waveTimer >= asw) {
       callNextWave();
     }
   }
@@ -2567,7 +2780,7 @@ function activateTimeStop() {
   const ts = gameState.towers.find(t => t.tmpl.special === 'timestop');
   if (!ts) return;
   gameState.timeStopT = 150 + ts.lv * 40;
-  gameState.timeStopCd = 900;
+  gameState.timeStopCd = 1500; // TEMPUS: クールタイム延長（旧900 → 1500、約15秒→25秒）
   gameState.floatingTexts.push(new FloatText(canvas.width / 2, canvas.height / 2 - 60, '⏱ TIME STOP ⏱', '#ffd700'));
   gameState.screenShake = Math.max(gameState.screenShake, 14);
   updateGameUI();
